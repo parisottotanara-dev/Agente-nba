@@ -100,6 +100,8 @@ function shownOvr(p) {
 }
 function shownPot(p) {
   const k = isClient(p) || p.scouted ? 0.25 : 1;
+  // se l'informatore ne sa più dello scout, vale la sua stima
+  if (!isClient(p) && p.intelPot != null && p.intelSd < scoutSD() * k) return clamp(p.intelPot, shownOvr(p), 99);
   return clamp(Math.round(p.pot + p.noise * scoutSD() * k), shownOvr(p), 99);
 }
 const exact = p => isClient(p) || p.scouted || !p.school;
@@ -110,7 +112,7 @@ function newGame(agencyName, agentName) {
   S = {
     v: 2, agency: agencyName || 'Hoop Dreams Agency', agent: agentName || 'Agente',
     cash: 300000, rep: 15, season: 2026, phase: 'fa', week: 1, turn: 0,
-    staff: { scout: 0, legal: 0, marketing: 0, office: 0 },
+    staff: { scout: 0, legal: 0, marketing: 0, office: 0, informer: 0 }, intel: [],
     teams: TEAMS.map((t, i) => ({ id: i, city: t[0], name: t[1], abbr: t[2], market: t[3], color: t[4], color2: t[5], w: 0, l: 0 })),
     players: {}, clients: [], offers: [], inbox: [], news: [], nextId: 1, nextEv: 1,
     goals: {}, debtWeeks: 0, history: [], lastChampion: null, over: false,
@@ -265,9 +267,10 @@ const STAFF = {
   legal: { name: 'Ufficio legale', icon: '⚖️', desc: '+3% sul tetto massimo che le squadre sono disposte a pagare.' },
   marketing: { name: 'Marketing', icon: '📣', desc: '+10% valore sponsor e +3% probabilità di convincere nuovi clienti.' },
   office: { name: 'Uffici', icon: '🏢', desc: '+3 posti cliente per livello.' },
+  informer: { name: 'Informatore', icon: '🕵️', desc: 'Ti passa soffiate sui prospetti del prossimo Draft: potenziale, chi vuole essere seguito, chi sta per firmare con un rivale. All\'inizio è scarso e a volte sbaglia.' },
 };
 const upgradeCost = lvl => [60000, 150000, 320000, 650000, 1300000][lvl] ?? Infinity;
-const weeklyCost = () => 6000 + 3000 * (S.staff.scout + S.staff.legal + S.staff.marketing) + 4000 * S.staff.office;
+const weeklyCost = () => 6000 + 3000 * (S.staff.scout + S.staff.legal + S.staff.marketing + (S.staff.informer || 0)) + 4000 * S.staff.office;
 function weeklyIncomeEstimate() {
   let inc = 0;
   for (const p of clients()) {
@@ -455,6 +458,7 @@ function recruitChance(p, comm) {
   let c = 0.5 + (S.rep - (starPower(p) - 55) * 1.6) / 80 + (4 - comm) * 0.1 + S.staff.marketing * 0.03;
   if (p.agency) c -= 0.15;
   c -= p.refusals * 0.12;
+  c += (p.bond || 0) / 200; // il legame costruito prima del Draft conta
   return clamp(c, 0.02, 0.95);
 }
 function pitch(pid, comm) {
@@ -577,9 +581,10 @@ function createEvent(e, p) {
   const leagueNames = new Set(Object.values(S.players).map(x => x.name));
   const others = Object.values(S.players).filter(x => x.team != null && !isClient(x) && x.ovr >= 80 && (!p || x.id !== p.id));
   // un personaggio famoso non compare mai nell'imprevisto di sé stesso, né se gioca nella lega
-  const celebs = CELEBS.filter(c => !leagueNames.has(c) && (!p || c !== p.name));
+  const pool = e.celeb && CELEB_KIND[e.celeb] ? CELEB_KIND[e.celeb] : CELEBS;
+  const celebs = pool.filter(c => !leagueNames.has(c) && (!p || c !== p.name));
   const d = {
-    p: p ? p.name : '', t: p && teamOf(p) ? teamName(teamOf(p)) : '', c: pick(celebs.length ? celebs : CELEBS), r: pick(RIVALS),
+    p: p ? p.name : '', t: p && teamOf(p) ? teamName(teamOf(p)) : '', c: pick(celebs.length ? celebs : CELEBS.filter(c => !leagueNames.has(c))), r: pick(RIVALS),
     n: others.length ? pick(others).name : 'un avversario', age: p ? p.age : '', num: p ? p.num : '',
     b: pick(BRANDS.filter(b => !p || !p.sponsors.some(s => s.brand === b))), mult: r1(fameMult(p)),
   };
@@ -756,12 +761,89 @@ function tradePlayer(p, toContender) {
   return to;
 }
 
+
+/* ================================================================== */
+/* Informatore e legame con i prospetti del prossimo Draft             */
+/* ================================================================== */
+const INFORMER_LV = ['Non assunto', 'Scarso', 'Discreto', 'Buono', 'Ottimo', 'Leggendario'];
+function informerWeek() {
+  const lv = S.staff.informer || 0;
+  if (!lv || !chance(0.2 + lv * 0.07)) return;
+  const pros = Object.values(S.players).filter(p => p.school && !p.retired && !isClient(p));
+  if (!pros.length) return;
+  // più è bravo, più le sue soffiate riguardano i veri talenti
+  const noise = 14 - lv * 2.4;
+  const ranked = pros.map(p => [p, p.pot + gauss() * noise]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  const p = ranked[randi(0, Math.min(9, ranked.length - 1))];
+  const sd = Math.max(1.5, 9 - lv * 1.6);
+  const r = Math.random();
+  let text;
+  if (r < 0.25 && !p.bondTip) {
+    p.bondTip = true;
+    text = `${p.name} (${p.school}) cerca un agente che lo segua da vicino: se lo coltivi ora, il legame crescerà il doppio.`;
+  } else if (r < 0.45 && !p.agency && p.rivalDeadline == null) {
+    p.rivalDeadline = S.turn + 3; p.rivalWho = pick(RIVALS);
+    text = `${p.rivalWho} sta per far firmare ${p.name} (${p.school}). Hai 3 settimane per convincerlo.`;
+  } else {
+    let est = Math.round(p.pot + gauss() * sd);
+    if (lv <= 2 && chance(0.3 - lv * 0.1)) est += pick([-1, 1]) * randi(5, 10); // l'informatore scarso a volte prende cantonate
+    est = clamp(est, p.ovr, 99);
+    if (p.intelSd == null || sd <= p.intelSd) { p.intelPot = est; p.intelSd = sd; }
+    text = `${p.name} (${p.school}): secondo me il suo potenziale è ~${est}.`;
+  }
+  S.intel.unshift({ when: `${seasonLabel()} · ${phaseLabel()}`, pid: p.id, text, lv });
+  if (S.intel.length > 20) S.intel.length = 20;
+  addNews(`🕵️ Soffiata dell'informatore: ${esc(text)}`);
+  UI.pendingToast = UI.pendingToast || [text, 'intel'];
+}
+function rivalDeadlines() {
+  for (const p of Object.values(S.players)) {
+    if (p.rivalDeadline == null || S.turn < p.rivalDeadline) continue;
+    if (!isClient(p) && !p.agency && p.school && (p.bond || 0) < 60) {
+      p.agency = p.rivalWho;
+      addNews(`🦈 ${esc(p.rivalWho)} ha fatto firmare ${esc(p.name)} prima di te.`, 'bad');
+    }
+    p.rivalDeadline = null;
+  }
+}
+const cultivateCost = p => Math.round(Math.max(1000, (starPower(p) - 50) * 180) / 100) * 100;
+function cultivate(pid) {
+  const p = P(pid);
+  if (p.lastBond === S.turn) return { msg: 'Lo hai già incontrato questa settimana.', type: 'warn' };
+  const cost = cultivateCost(p);
+  if (S.cash < cost) return { msg: `Servono ${fmt$(cost)}.`, type: 'bad' };
+  spend(cost); p.lastBond = S.turn;
+  let gain = randi(6, 12) + (S.staff.informer || 0) * 2;
+  const tip = p.bondTip; if (tip) { gain *= 2; p.bondTip = false; }
+  p.bond = clamp((p.bond || 0) + gain, 0, 100);
+  const what = pick(['Hai visto una sua partita in prima fila', 'Cena con la sua famiglia', 'Gli hai regalato un paio di Naik',
+    'Lo hai invitato al tuo camp estivo', 'Lunga chiacchierata dopo l\'allenamento', 'Hai conosciuto il suo allenatore del college']);
+  return { msg: `${what}. Legame con ${p.name} ${p.bond}/100 (+${gain}${tip ? ', raddoppiato dalla soffiata' : ''}).`, type: 'good' };
+}
+// Prima del Draft i prospetti con cui hai un legame forte possono scegliere te
+function bondedJoin() {
+  const pros = Object.values(S.players).filter(p => p.school && !p.retired && !isClient(p) && (p.bond || 0) >= 70)
+    .sort((a, b) => b.bond - a.bond);
+  for (const p of pros) {
+    if (clients().length >= capacity()) break;
+    if (!chance(0.35 + (p.bond - 70) / 60)) continue;
+    p.comm = 3; p.agency = S.agency; p.morale = clamp(60 + Math.round(p.bond / 3), 0, 100); p.scouted = true;
+    S.clients.push(p.id);
+    addNews(`🤝 <b>${esc(p.name)}</b> ti ha scelto come agente prima del Draft, grazie al legame che avete costruito!`, 'good');
+    UI.pendingToast = [`${p.name} ti ha scelto come agente prima del Draft!`, 'good'];
+  }
+}
+
 /* ================================================================== */
 /* Avanzamento                                                         */
 /* ================================================================== */
 function advance() {
   if (S.over) return;
-  if (S.inbox.length) { toast('Prima scegli cosa fare con gli imprevisti della settimana (Home).'); UI.tab = 'home'; UI.render(); return; }
+  if (S.inbox.length) {
+    UI.focusEvents(true);
+    toast(`Hai ${S.inbox.length === 1 ? 'un imprevisto' : S.inbox.length + ' imprevisti'} da risolvere prima di andare avanti.`, 'warn', 'Prima decidi!');
+    return;
+  }
   S.turn++;
   spend(weeklyCost());
   S.rep = r1(S.rep * 0.997); // la fama va mantenuta
@@ -800,12 +882,15 @@ function advance() {
     playoffs();
     S.phase = 'draft'; S.week = 1;
   } else if (S.phase === 'draft') {
+    bondedJoin();
     runDraft();
     offseason();
     S.phase = 'fa'; S.week = 1;
     makeOffersForClientFAs();
   }
 
+  if (S.phase === 'fa' || S.phase === 'reg') informerWeek();
+  rivalDeadlines();
   if (!S.over) genWeeklyEvents();
 
   // bancarotta
@@ -817,7 +902,12 @@ function advance() {
 
   checkGoals();
   save(); UI.render();
-  if (S.over) UI.gameOver();
+  if (S.over) return UI.gameOver();
+  if (S.inbox.length) {
+    UI.focusEvents(false);
+    toast(S.inbox.length === 1 ? S.inbox[0].title : `${S.inbox.length} imprevisti questa settimana: scegli cosa fare.`, 'event', 'Imprevisto!');
+  } else if (UI.pendingToast) toast(...UI.pendingToast);
+  UI.pendingToast = null;
 }
 
 function allStar() {
@@ -1010,10 +1100,17 @@ function checkGoals() {
 /* Interfaccia                                                         */
 /* ================================================================== */
 let toastTimer = null;
-function toast(msg) {
+const TOAST_TITLES = { good: 'Grande!', bad: 'Ops!', warn: 'Attenzione!', goal: 'Obiettivo!', event: 'Imprevisto!', info: 'Info', intel: 'Soffiata!' };
+function toast(msg, type, title) {
   const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.remove('hidden');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
+  msg = String(msg);
+  type = type || (/^✅/.test(msg) ? 'good' : /^❌/.test(msg) ? 'bad' : /^🏅/.test(msg) ? 'goal' : /insufficient|Servono|non hai abbastanza/i.test(msg) ? 'bad' : 'info');
+  el.className = 'toast arc ' + type;
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<b>${esc(title || TOAST_TITLES[type])}</b><span>${esc(msg.replace(/^(✅|❌|🏅)\s*/u, ''))}</span>`;
+  void el.offsetWidth; el.classList.add('show');
+  el.onclick = () => el.classList.add('hidden');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), type === 'warn' || type === 'event' ? 4200 : 3600);
 }
 
 const UI = {
@@ -1032,7 +1129,7 @@ const UI = {
           <div class="spacer"></div>
           <div class="cash-pill ${S.cash < 0 ? 'bad' : ''}" id="t-cash2">💰 ${fmt$(S.cash)}</div>
           <button class="btn help" id="t-help" onclick="Tutorial.start()" aria-label="Rivedi il tutorial">?</button>
-          <button class="btn primary big" id="t-adv" onclick="advance()" ${S.over ? 'disabled' : ''}>${advLabel}</button>
+          <button class="btn primary big ${inbox ? 'blocked' : ''}" id="t-adv" onclick="advance()" ${S.over ? 'disabled' : ''}>${inbox ? `⚠ Decidi ${inbox === 1 ? 'l\'imprevisto' : 'gli ' + inbox + ' imprevisti'}` : advLabel}</button>
         </div>
         <nav class="tabs">
           ${[['home', '🏠 Home', inbox], ['clients', '⭐ Clienti', nOffers], ['market', '🔎 Mercato', 0], ['league', '🏆 Lega', 0], ['staff', '🏢 Staff', 0]]
@@ -1042,6 +1139,16 @@ const UI = {
       <main>${this['v_' + this.tab]()}</main>`;
   },
   go(t) { this.tab = t; this.render(); window.scrollTo(0, 0); },
+  focusEvents(blocked) {
+    this.closeModal();
+    if (this.tab !== 'home') { this.tab = 'home'; this.render(); }
+    const el = document.getElementById('t-ev'); if (!el) return;
+    const head = document.querySelector('header.top'), hb = head ? head.getBoundingClientRect().bottom : 0;
+    const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - hb - 10, behavior: smooth ? 'smooth' : 'auto' });
+    el.classList.remove('nudge', 'shake'); void el.offsetWidth;
+    el.classList.add('nudge'); if (blocked) el.classList.add('shake');
+  },
 
   startScreen() {
     const has = hasLocalSave();
@@ -1097,7 +1204,7 @@ const UI = {
 
       <div id="t-ev">
       <div class="sec"><h2>📣 Questa settimana</h2>${S.inbox.length ? `<span class="muted small">${S.inbox.length} da decidere</span>` : ''}</div>
-      ${S.inbox.length ? `<div class="evs">${S.inbox.map(e => this.eventCard(e)).join('')}</div>`
+      ${S.inbox.length ? `<div class="must" role="note"><span>⚠</span> Decidi prima di avanzare</div><div class="evs">${S.inbox.map(e => this.eventCard(e)).join('')}</div>`
         : `<div class="ev calm"><div class="ev-top"><div class="ev-ico">😌</div><div><h3>Settimana tranquilla</h3><p>Nessun imprevisto da gestire. Premi <b>${{ fa: 'Avanza settimana', reg: 'Gioca settimana', po: 'Gioca i playoff', draft: 'Vai al Draft' }[S.phase]}</b> per andare avanti.</p></div></div></div>`}
       </div>
 
@@ -1192,35 +1299,64 @@ const UI = {
     if (this.q) { const q = this.q.toLowerCase(); list = list.filter(p => p.name.toLowerCase().includes(q)); }
     const key = { ovr: p => shownOvr(p), pot: p => shownPot(p), age: p => -p.age, val: p => shownValue(p) }[this.sort];
     list.sort((a, b) => key(b) - key(a));
-    const total = list.length; list = list.slice(0, 80);
     const full = clients().length >= capacity();
+    const pros = this.mkt === 'prospect';
+    // gruppi ben separati: i tuoi obiettivi, chi è libero, chi ha già un agente
+    const groups = [];
+    if (pros) groups.push(['🎯 I tuoi obiettivi', 'Prospetti con cui hai già un legame', list.filter(p => (p.bond || 0) >= 30 && p.agency !== S.agency), 'target']);
+    groups.push(['🟢 Senza agente', 'I più facili da convincere', list.filter(p => !p.agency && !(pros && (p.bond || 0) >= 30)), 'free']);
+    groups.push(['🔒 Con altre agenzie', 'Più difficili: devi strapparli a un rivale', list.filter(p => p.agency && !(pros && (p.bond || 0) >= 30)), 'rival']);
     return `
       <h2>Mercato</h2>
       <div class="filters">
-        <div class="seg">${[['prospect', 'Prospetti Draft'], ['fa', 'Free agent'], ['pro', 'Sotto contratto']].map(([k, l]) =>
+        <div class="seg">${[['prospect', '🎓 Prospetti'], ['fa', '🆓 Free agent'], ['pro', '📝 Sotto contratto']].map(([k, l]) =>
           `<button class="${this.mkt === k ? 'on' : ''}" onclick="UI.mkt='${k}';UI.render()">${l}</button>`).join('')}</div>
-        <select onchange="UI.pos=this.value;UI.render()"><option value="">Tutti i ruoli</option>${POS.map(x => `<option ${this.pos === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
-        <select onchange="UI.sort=this.value;UI.render()">${[['ovr', 'Ordina: OVR'], ['pot', 'Ordina: potenziale'], ['age', 'Ordina: più giovani'], ['val', 'Ordina: valore']].map(([k, l]) => `<option value="${k}" ${this.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        <input placeholder="Cerca nome…" value="${esc(this.q)}" onchange="UI.q=this.value;UI.render()">
+        <select id="f-pos" onchange="UI.pos=this.value;UI.render()" aria-label="Ruolo"><option value="">Tutti i ruoli</option>${POS.map(x => `<option ${this.pos === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        <select id="f-sort" onchange="UI.sort=this.value;UI.render()" aria-label="Ordina">${[['ovr', 'Ordina: OVR'], ['pot', 'Ordina: potenziale'], ['age', 'Ordina: più giovani'], ['val', 'Ordina: valore']].map(([k, l]) => `<option value="${k}" ${this.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <input id="f-q" placeholder="Cerca nome…" value="${esc(this.q)}" onchange="UI.q=this.value;UI.render()" aria-label="Cerca">
       </div>
-      ${full ? '<p class="warn small">Hai raggiunto il limite di clienti: amplia gli uffici nella scheda Staff.</p>' : ''}
-      <p class="small muted">${this.mkt === 'prospect' ? 'Le valutazioni dei prospetti sono stime (~): osservali per vederli meglio. Al Draft finiscono in squadra con un contratto da rookie.' :
-        this.mkt === 'fa' ? 'I free agent firmati in Free Agency ricevono subito offerte dalle squadre.' : 'Strappare un giocatore a un\'agenzia rivale è più difficile.'}
-        ${total > 80 ? ` Mostrati 80 di ${total}.` : ''}</p>
-      <div class="tbl-wrap"><table>
-        <tr><th>Giocatore</th><th>Ruolo</th><th class="num">Età</th><th class="num">OVR</th><th class="num">POT</th><th>${this.mkt === 'prospect' ? 'Provenienza' : 'Squadra'}</th><th>Agenzia</th><th class="num">Valore</th><th></th></tr>
-        ${list.map(p => {
-          const ex = exact(p);
-          return `<tr><td><a class="pname" href="#" onclick="UI.player(${p.id});return false">${avatarSVG(p, 28)}${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</a></td><td>${p.pos}</td><td class="num">${p.age}</td>
-          <td class="num"><b>${ex ? '' : '~'}${shownOvr(p)}</b></td><td class="num">${ex ? '' : '~'}${shownPot(p)}</td>
-          <td>${p.school ? esc(p.school) : p.team != null ? esc(teamOf(p).abbr) : '—'}</td>
-          <td class="small ${p.agency ? '' : 'good'}">${p.agency ? esc(p.agency) : 'Nessuna'}</td>
-          <td class="num">${ex ? '' : '~'}${fmtM(shownValue(p))}</td>
-          <td>${!ex && p.school ? `<button class="btn sm" title="Manda uno scout a osservarlo" onclick="UI.doScout(${p.id})">🔭</button> ` : ''}<button class="btn primary sm" onclick="UI.pitchModal(${p.id})" ${full ? 'disabled' : ''}>Proponi</button></td></tr>`;
-        }).join('')}
-      </table></div>`;
+      ${full ? '<div class="note warn">Hai raggiunto il limite di clienti: amplia gli <b>Uffici</b> nella scheda Staff.</div>' : ''}
+      ${pros ? this.intelBox() : ''}
+      <p class="small muted">${pros ? 'Le valutazioni dei prospetti sono stime (~). <b>🔭 Osserva</b> per vederli meglio, <b>🤝 Coltiva</b> per creare un legame prima del Draft: chi ti è legato accetta più facilmente e a volte sceglie te da solo.' :
+        this.mkt === 'fa' ? 'I free agent firmati in Free Agency ricevono subito offerte dalle squadre.' : 'Strappare un giocatore a un\'agenzia rivale è più difficile.'}</p>
+      ${groups.filter(g => g[2].length).map(([h, sub, g, cls]) => `
+        <section class="mk-group">
+          <div class="mk-head"><h3>${h} <span>${g.length}</span></h3><small>${sub}</small></div>
+          <div class="mk-list">${g.slice(0, 30).map(p => this.mkCard(p, cls, full)).join('')}</div>
+          ${g.length > 30 ? `<p class="small muted">Mostrati 30 di ${g.length}: usa filtri e ricerca per gli altri.</p>` : ''}
+        </section>`).join('') || '<div class="card muted">Nessun giocatore con questi filtri.</div>'}`;
   },
-  doScout(pid) { toast(scout(pid)); save(); this.render(); },
+  mkCard(p, cls, full) {
+    const ex = exact(p), t = teamOf(p), bond = p.bond || 0;
+    const intel = !ex && p.intelPot != null;
+    const deadline = p.rivalDeadline != null && !p.agency ? p.rivalDeadline - S.turn : null;
+    return `<article class="mk ${cls}">
+      <button class="mk-main" onclick="UI.player(${p.id})">
+        ${avatarSVG(p, 48)}
+        <span class="mk-info"><b>${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</b>
+          <span>${p.pos} · ${p.age} anni · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
+          <span class="${p.agency ? '' : 'good'}">${p.agency ? '🔒 ' + esc(p.agency) : '🟢 nessun agente'}</span></span>
+        <span class="mk-rat"><span><small>OVR</small><b>${ex ? '' : '~'}${shownOvr(p)}</b></span><span><small>POT</small><b class="pot">${ex ? '' : '~'}${shownPot(p)}</b></span></span>
+      </button>
+      ${p.school ? `<div class="mk-bond"><small>Legame</small><div class="bar"><i style="width:${bond}%;background:${bond >= 70 ? 'var(--good)' : bond >= 30 ? 'var(--accent)' : 'var(--muted)'}"></i></div><b>${bond}</b></div>` : ''}
+      ${intel || p.bondTip || deadline != null ? `<div class="mk-tags">${intel ? '<span class="tag intel">🕵️ soffiata sul potenziale</span>' : ''}${p.bondTip ? '<span class="tag hot">💬 vuole essere seguito</span>' : ''}${deadline != null ? `<span class="tag inj">⏳ un rivale lo firma tra ${Math.max(0, deadline)} sett.</span>` : ''}</div>` : ''}
+      <div class="mk-foot"><span class="val">Valore ${ex ? '' : '~'}${fmtM(shownValue(p))}</span>
+        <span class="mk-act">
+          ${!ex && p.school ? `<button class="btn sm" onclick="UI.doScout(${p.id})" title="Manda uno scout">🔭 Osserva</button>` : ''}
+          ${p.school ? `<button class="btn sm" onclick="UI.doCultivate(${p.id})" ${p.lastBond === S.turn ? 'disabled' : ''} title="Costa ${fmt$(cultivateCost(p))}">🤝 Coltiva ${fmt$(cultivateCost(p))}</button>` : ''}
+          <button class="btn primary sm" onclick="UI.pitchModal(${p.id})" ${full ? 'disabled' : ''}>Proponi</button>
+        </span></div>
+    </article>`;
+  },
+  intelBox() {
+    const lv = S.staff.informer || 0;
+    if (!lv) return `<div class="intel-box"><div class="ib-head"><span>🕵️</span><div><b>Nessun informatore</b><small>Assumine uno nella scheda Staff: durante l'anno ti passerà soffiate sui prospetti del prossimo Draft.</small></div>
+      <button class="btn sm" onclick="UI.go('staff')">Assumi</button></div></div>`;
+    return `<div class="intel-box"><div class="ib-head"><span>🕵️</span><div><b>Il tuo informatore · ${INFORMER_LV[lv]}</b><small>${lv <= 2 ? 'È ancora alle prime armi: a volte sbaglia. Potenzialo nella scheda Staff.' : 'Le sue soffiate sono affidabili.'}</small></div></div>
+      ${S.intel.length ? `<ul>${S.intel.slice(0, 4).map(r => `<li><a href="#" onclick="UI.player(${r.pid});return false">${esc(r.text)}</a><small>${esc(r.when)}</small></li>`).join('')}</ul>` : '<p class="small muted">Ancora nessuna soffiata: arriveranno nelle prossime settimane.</p>'}</div>`;
+  },
+  doCultivate(pid) { const r = cultivate(pid); toast(r.msg, r.type); save(); this.render(); },
+  doScout(pid) { toast(scout(pid), 'intel', 'Rapporto scout'); save(); this.render(); },
 
   pitchModal(pid, comm = 3) {
     const p = P(pid);
@@ -1249,7 +1385,7 @@ const UI = {
   },
   doPitch(pid, comm) {
     const r = pitch(pid, comm);
-    save(); this.closeModal(); this.render(); toast(r.msg);
+    save(); this.closeModal(); this.render(); toast(r.msg, r.ok ? 'good' : 'bad');
   },
 
   /* ---------- Trattative ---------- */
@@ -1280,7 +1416,7 @@ const UI = {
         <button class="btn bad" onclick="UI.doReject(${pid}, ${sel.id})">Rifiuta</button>
       </div>`);
   },
-  doAccept(oid) { acceptOffer(oid); save(); this.closeModal(); this.render(); toast('Contratto firmato!'); },
+  doAccept(oid) { acceptOffer(oid); save(); this.closeModal(); this.render(); toast('Contratto firmato!', 'good'); },
   doCounter(pid, oid) {
     const ask = r1(+document.getElementById('ask').value), yrs = +document.getElementById('yrs').value;
     if (!(ask >= MIN_SAL)) return toast(`Minimo ${fmtM(MIN_SAL)}.`);
@@ -1368,16 +1504,17 @@ const UI = {
     return `<h2>Staff e strutture</h2>
       <p class="muted small">Costi fissi attuali: <b>${fmt$(weeklyCost())}</b> a settimana. Ogni livello aumenta le spese settimanali.</p>
       <div class="grid">${Object.entries(STAFF).map(([k, s]) => {
-        const lvl = S.staff[k], cost = upgradeCost(lvl);
+        const lvl = S.staff[k] || 0, cost = upgradeCost(lvl);
         return `<div class="card"><h3>${s.icon} ${s.name}</h3><div class="muted small">${s.desc}</div>
-          <p>Livello <b>${lvl}</b> / 5 ${'★'.repeat(lvl)}${'☆'.repeat(5 - lvl)}</p>
-          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>Potenzia — ${fmt$(cost)}</button>` : '<span class="good">Al massimo!</span>'}</div>`;
+          <p>${k === 'informer' ? `<b>${INFORMER_LV[lvl]}</b>` : `Livello <b>${lvl}</b> / 5`} ${'★'.repeat(lvl)}${'☆'.repeat(5 - lvl)}</p>
+          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} — ${fmt$(cost)}</button>` : '<span class="good">Al massimo!</span>'}</div>`;
       }).join('')}</div>`;
   },
   upgrade(k) {
-    const cost = upgradeCost(S.staff[k]);
-    if (S.cash < cost) return toast('Fondi insufficienti.');
-    spend(cost); S.staff[k]++;
+    const cost = upgradeCost(S.staff[k] || 0);
+    if (S.cash < cost) return toast('Fondi insufficienti.', 'bad');
+    spend(cost); S.staff[k] = (S.staff[k] || 0) + 1;
+    toast(k === 'informer' ? (S.staff[k] === 1 ? 'Hai assunto un informatore. È ancora scarso, ma ti passerà le prime soffiate.' : `Il tuo informatore ora è: ${INFORMER_LV[S.staff[k]]}.`) : `${STAFF[k].name}: livello ${S.staff[k]}.`, 'good', 'Upgrade!');
     addNews(`🔧 ${STAFF[k].name} potenziato al livello ${S.staff[k]}.`);
     save(); this.render();
   },
@@ -1415,9 +1552,9 @@ const Tutorial = {
     { t: 't-ev', h: 'Gli imprevisti', x: 'Spesso succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede e con che probabilità. <b>Devi decidere prima di avanzare.</b> Alcune scelte cambiano anche l\'aspetto del giocatore!' },
     { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, ti pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
     { t: 'tab-clients', h: 'Clienti', x: 'Qui ci sono le schede dei tuoi assistiti: contratto, morale, statistiche. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì negozi stipendio e anni. Chiedi troppo e il GM perde la pazienza. Usa <b>📞 Contatta</b> ogni settimana per tenerli contenti.' },
-    { t: 'tab-market', h: 'Mercato', x: 'Qui trovi i nuovi clienti: <b>prospetti</b> del college (vanno al Draft), <b>free agent</b> (senza squadra) e giocatori di altre agenzie. Usa 🔭 per osservare un prospetto e <b>Proponi</b> per convincerlo: una commissione più bassa lo convince più facilmente.' },
+    { t: 'tab-market', h: 'Mercato', x: 'Qui trovi i nuovi clienti: <b>prospetti</b> del college (vanno al Draft), <b>free agent</b> (senza squadra) e giocatori di altre agenzie. Usa 🔭 per osservare un prospetto, 🤝 per <b>coltivare un legame</b> prima del Draft e <b>Proponi</b> per convincerlo: una commissione più bassa lo convince più facilmente.' },
     { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre, migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
-    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Ogni livello costa e aumenta le spese settimanali, ma ti fa guadagnare di più.' },
+    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Qui puoi anche assumere un <b>informatore</b>: all\'inizio è scarso, ma ti passa soffiate sui prospetti del prossimo Draft. Ogni livello aumenta le spese settimanali.' },
     { t: 't-help', h: 'Tocca a te!', x: 'Puoi rivedere questo tutorial quando vuoi dal pulsante <b>?</b>. Primo consiglio: vai nel <b>Mercato</b>, firma un free agent e chiudi la sua trattativa. In bocca al lupo!' },
   ],
   start() {
@@ -1443,7 +1580,11 @@ const Tutorial = {
       <div class="nav">${this.i < n - 1 ? '<button class="skip" onclick="Tutorial.end()">Salta</button>' : '<span></span>'}
       <span class="btns">${this.i ? '<button class="back" onclick="Tutorial.go(-1)" aria-label="Indietro">‹</button>' : ''}<button class="next" onclick="Tutorial.go(1)">${this.i < n - 1 ? 'Avanti ›' : 'Inizia a giocare!'}</button></span></div>`;
     const tg = st.t && document.getElementById(st.t);
-    if (tg && tg.closest('main')) {
+    if (tg && tg.closest('nav')) {
+      window.scrollTo(0, 0);
+      const nav = tg.closest('nav');
+      nav.scrollLeft = tg.offsetLeft - (nav.clientWidth - tg.offsetWidth) / 2;
+    } else if (tg && tg.closest('main')) {
       const head = document.querySelector('header.top'), hb = head ? head.getBoundingClientRect().bottom : 0;
       window.scrollTo(0, window.scrollY + tg.getBoundingClientRect().top - hb - 12);
     } else window.scrollTo(0, 0);
@@ -1460,7 +1601,8 @@ const Tutorial = {
     let h = r.height;
     // se il bersaglio è troppo alto, ne evidenzio solo la parte che lascia spazio al fumetto
     if (below < bh + 24 && above < bh + 24) h = Math.max(60, innerHeight - r.top - bh - 40);
-    Object.assign(spot.style, { left: r.left - pad + 'px', top: r.top - pad + 'px', width: r.width + pad * 2 + 'px', height: h + pad * 2 + 'px' });
+    const L = Math.max(4, r.left - pad), R = Math.min(innerWidth - 4, r.right + pad);
+    Object.assign(spot.style, { left: L + 'px', top: r.top - pad + 'px', width: Math.max(0, R - L) + 'px', height: h + pad * 2 + 'px' });
     coach.className = 'coach ' + (innerHeight - (r.top + h) >= bh + 24 || above < bh + 24 ? 'bottom' : 'top');
   },
   go(d) { this.i += d; if (this.i >= this.steps.length) return this.end(); this.i = Math.max(0, this.i); this.show(); },
@@ -1468,6 +1610,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();

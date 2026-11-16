@@ -8,9 +8,9 @@
 'use strict';
 
 const EVENT_TUNE = {
-  videoclip: { cond: { ovr: 66 }, ch: { 0: { tr: -2 }, 1: { ask: 'other' } } },
+  videoclip: { celeb: 'music', cond: { ovr: 66 }, ch: { 0: { tr: -2 }, 1: { ask: 'other' } } },
   reality: { cond: { max: 82 } },
-  film: { cond: { ovr: 72 }, ch: { 1: { ask: 'other' } } },
+  film: { celeb: 'actor', cond: { ovr: 72 }, ch: { 1: { ask: 'other' } } },
   podcast: { cond: { ovr: 65 } },
   talkshow: { cond: { ovr: 72 } },
   intervista: { ch: { 0: { ask: 'player', tr: 3 }, 1: { tr: -3 }, 2: { tr: 1 } } },
@@ -71,10 +71,20 @@ const EVENT_TUNE = {
   cartoni: { cond: { ovr: 62 } },
 };
 
+// Che tipo di personaggio famoso serve all'imprevisto (gli altri usano chiunque)
+const CELEB_KIND = {
+  music: ['Taylor Swiffer', 'Snoop Doggo', 'Eros Ramazzotto', 'Billie Eyelash', 'Kanye Best', 'Rihanna Banana', 'Shakiro',
+    'Bruno Marte', 'Ed Sheerin', 'Harry Stiles', 'Gianni Morandini', 'Lady Gagà', 'Drakko'],
+  actor: ['Leo DiCaprino', 'Brad Pitbull', 'Keanu Leaves', 'Morgan Freezer', 'Dwayne "La Roccia" Johnsoni', 'Zendayana',
+    'Tom Cruiseship', 'Will Smithers'],
+};
+CELEB_KIND.music.concat(CELEB_KIND.actor).forEach(n => { if (!CELEBS.includes(n)) console.warn('Personaggio sconosciuto:', n); });
+
 // Applica le regolazioni agli imprevisti
 for (const [id, t] of Object.entries(EVENT_TUNE)) {
   const e = EVENTS.find(x => x.id === id);
   if (!e) continue;
   if (t.cond) e.cond = { ...(e.cond || {}), ...t.cond };
+  if (t.celeb) e.celeb = t.celeb;
   for (const [i, c] of Object.entries(t.ch || {})) Object.assign(e.choices[i], c);
 }

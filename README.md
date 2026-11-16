@@ -6,6 +6,9 @@ Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, 
 - **Tutorial** con Coach Gigi alla prima partita (rivedibile col pulsante ?).
 - **110 imprevisti** (`events.js`): quasi ogni settimana una scelta da fare; alcuni cambiano l'aspetto del giocatore (tatuaggi, capelli, occhiali...).
 - **Rapporti** con giocatori, squadre e sponsor: le tue scelte li cambiano, e da loro dipende la probabilità che accettino le tue richieste (`tuning.js`).
+- **Informatore** (Staff): soffiate sui prospetti del prossimo Draft; all'inizio è scarso e a volte sbaglia.
+- **Legame con i prospetti**: coltivalo prima del Draft; chi ti è molto legato può sceglierti da solo.
+- **Notifiche in stile arcade**; se c'è un imprevisto la visuale si sposta lì e non puoi avanzare finché non decidi.
 - **Home illustrata**: il cliente più pagato schiaccia con la maglia, il numero e il look veri.
 
 ## Come si gioca
