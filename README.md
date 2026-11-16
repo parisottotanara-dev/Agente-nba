@@ -6,6 +6,7 @@ Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, 
 - **Tutorial** con Coach Gigi alla prima partita (rivedibile col pulsante ?).
 - **110 imprevisti** (`events.js`): quasi ogni settimana una scelta da fare; alcuni cambiano l'aspetto del giocatore (tatuaggi, capelli, occhiali...).
 - **Rapporti** con giocatori, squadre e sponsor: le tue scelte li cambiano, e da loro dipende la probabilità che accettino le tue richieste (`tuning.js`).
+- **Carattere e storia**: ogni giocatore ha 1-2 tratti (festaiolo, aggressivo, gentile, leader…) e una piccola storia inventata che non si ripete; il carattere decide che imprevisti gli capitano (`traits.js`).
 - **Partite settimana per settimana**: in Home prossima partita, posizione in classifica e medie; dopo ogni settimana i risultati con il voto (A+…F) di ogni tuo giocatore.
 - **Trattative vere per diventare agente**: il giocatore accetta di incontrarti, tu offri commissione e bonus, lui fa controfferte e ha una pazienza.
 - **Consiglia ai club** i tuoi giocatori e i prospetti: promessa di scelta al Draft, offerte o scambi; conta il rapporto con la squadra.

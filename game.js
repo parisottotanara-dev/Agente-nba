@@ -75,7 +75,7 @@ function newPlayer(kind) {
     injury: 0, sponsors: [], refusals: 0, lockedUntil: 0, lastPitch: -1, lastContact: -1,
     gp: 0, pts: 0, reb: 0, ast: 0, school: null, rookieSeason: null,
     career: { titles: 0, allstar: 0, mvp: 0, roy: 0, seasons: 0 },
-    num: pick(NUMBERS), look: genLook(),
+    num: pick(NUMBERS), look: genLook(), traits: genTraits(),
   };
   return p;
 }
@@ -506,8 +506,9 @@ const roundHalf = v => Math.round(v * 2) / 2;
 // Cosa vuole davvero (segreto): più è forte, meno commissione accetta e più bonus pretende
 function talkWants(p) {
   const st = starPower(p), bond = p.bond || 0;
-  const comm = clamp(roundHalf(4 - (st - 58) / 11 + (S.rep - 30) / 50 + bond / 80), 1, 4);
-  const bonus = Math.max(0, Math.round((st - 64) * 7 * (1 - bond / 150) * (p.agency ? 1.3 : 1) / 5) * 5);
+  const greedy = hasTrait(p, 'avido');
+  const comm = clamp(roundHalf(4 - (st - 58) / 11 + (S.rep - 30) / 50 + bond / 80 - (greedy ? 0.5 : 0)), 1, 4);
+  const bonus = Math.max(0, Math.round((Math.max(0, st - 64) * 7 + (greedy ? 20 : 0)) * (1 - bond / 150) * (p.agency ? 1.3 : 1) / 5) * 5);
   return { comm, bonus };
 }
 function startTalk(pid) {
@@ -694,6 +695,20 @@ function createEvent(e, p) {
   if (S.recentEv.length > 45) S.recentEv.shift();
   if (p) p.lastEv = S.turn;
 }
+// Il carattere pesa sulla scelta: imprevisti "suoi" molto più probabili, altri più o meno probabili
+function pickByTrait(pool, p) {
+  const w = pool.map(e => {
+    let x = e.trait ? 9 : 1;
+    for (const t of (p && p.traits) || []) {
+      if (TRAITS[t].boost.includes(e.id)) x *= 3;
+      if (TRAITS[t].dampen.includes(e.id)) x *= 0.3;
+    }
+    return x;
+  });
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
 function genWeeklyEvents() {
   const k = clients().filter(p => !p.retired).length;
   const active = S.phase === 'reg' || S.phase === 'fa';
@@ -715,10 +730,10 @@ function genWeeklyEvents() {
     let p = null, pool = [];
     for (let tries = 0; tries < 6 && !pool.length; tries++) {
       p = free.length && !chance(0.1) ? pick(free) : null;
-      if (p && p.morale < 35 && chance(0.5)) pool = EVENTS.filter(e => e.id === 'rivale');
-      else pool = EVENTS.filter(e => !e.rare && condOk(e, p) && !S.recentEv.includes(e.id));
+      if (p && p.morale < 35 && chance(hasTrait(p, 'leale') ? 0.15 : 0.5)) pool = EVENTS.filter(e => e.id === 'rivale');
+      else pool = EVENTS.filter(e => !e.rare && (!e.trait || hasTrait(p, e.trait)) && condOk(e, p) && !S.recentEv.includes(e.id));
     }
-    if (pool.length) createEvent(pick(pool), p);
+    if (pool.length) createEvent(pickByTrait(pool, p), p);
   }
 }
 
@@ -740,6 +755,7 @@ function fxText(f, inst) {
   if (f.br) o.push(`rapporto con lo sponsor ${f.br > 0 ? '+' : ''}${f.br}`);
   if (f.hype) o.push(`popolarità ${f.hype > 0 ? '+' : ''}${f.hype}`);
   if (f.ovr) o.push(`valutazione ${f.ovr > 0 ? '+' : ''}${f.ovr}`);
+  if (f.raise) o.push(`stipendio +${Math.round(f.raise * 100)}%`);
   if (f.pot) o.push(`potenziale ${f.pot > 0 ? '+' : ''}${f.pot}`);
   if (f.draftBoost) o.push(f.draftBoost > 0 ? 'sale nelle previsioni del Draft' : 'scende nelle previsioni del Draft');
   if (f.stayCollege) o.push('salta questo Draft');
@@ -762,7 +778,8 @@ function applyFx(f, inst, p) {
   if (f.cash) { const c = gain(f, inst); c > 0 ? earn(c * 1000) : spend(-c * 1000); }
   if (f.rep) changeRep(f.rep);
   const targets = f.all ? clients() : p ? [p] : [];
-  for (const x of targets) if (f.mor) x.morale = clamp(Math.round(x.morale + f.mor), 0, 100);
+  for (const x of targets) if (f.mor) x.morale = clamp(Math.round(x.morale + (f.mor < 0 && hasTrait(x, 'permaloso') ? f.mor * 1.4 : f.mor)), 0, 100);
+  if (f.raise && p && p.team != null) p.salary = r1(p.salary * (1 + f.raise));
   if (f.br) changeBrandRel(inst.data.b, f.br);
   if (!p) { if (f.gem) findGem(); return; }
   if (f.tr) changeTeamRel(p.team, f.tr);
@@ -1194,6 +1211,8 @@ function offseason() {
     else if (p.age <= 28) d = rand(-1, 2.5);
     else if (p.age <= 31) d = rand(-3, 1);
     else d = rand(-6, -1);
+    if (hasTrait(p, 'professionista') && p.age <= 30 && chance(0.6)) d += 1; // si allena più di tutti
+    if (hasTrait(p, 'festaiolo') && chance(0.3)) d -= 1;
     p.ovr = clamp(Math.round(p.ovr + d), 35, 99);
     p.pot = Math.max(p.pot, p.ovr);
     if (p.age > 27) p.pot = Math.max(p.ovr, p.pot - 1);
@@ -1406,7 +1425,7 @@ const UI = {
     if (!def) return '';
     return `<div class="ev ${e.rare ? 'rare' : ''}">${e.rare ? '<div class="rare-tag">⚡ Colpo di scena · capita di rado</div>' : ''}
       <div class="ev-top">${p ? `<div class="ev-av">${avatarSVG(p, 54)}<span>${e.ico}</span></div>` : `<div class="ev-ico">${e.ico}</div>`}
-        <div><h3>${esc(e.title)}</h3><p>${esc(e.text)}</p></div></div>
+        <div><h3>${esc(e.title)}</h3><p>${esc(e.text)}</p>${def.trait && TRAITS[def.trait] ? `<span class="trait why">${TRAITS[def.trait].icon} Succede perché è ${TRAITS[def.trait].label.toLowerCase()}</span>` : ''}</div></div>
       <div class="choices">${def.choices.map((ch, i) => {
         return `<button onclick="resolveEvent(${e.id}, ${i})">${esc(ch.label)}<small>${esc(choiceHint(ch, e, p))}</small></button>`;
       }).join('')}</div></div>`;
@@ -1437,6 +1456,7 @@ const UI = {
       <div class="pc-head">${avatarSVG(p, 56)}<div class="ovr ${this.ovrClass(p.ovr)}">${p.ovr}</div>
         <div><div class="pc-name">${esc(p.name)}</div>
         <div class="pc-sub">${p.pos} · ${p.age} anni · pot. ${shownPot(p)}</div>
+        <div class="traits">${traitChips(p)}</div>
         <div>${p.injury ? `<span class="tag inj">infortunato ${p.injury} sett.</span>` : ''}${!t && !p.school ? '<span class="tag fa">free agent</span>' : ''}${p.school ? '<span class="tag">prospetto Draft</span>' : ''}</div></div></div>
       <dl class="rows">
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) : p.school ? esc(p.school) : '—'}</dd>
@@ -1502,7 +1522,8 @@ const UI = {
         ${avatarSVG(p, 48)}
         <span class="mk-info"><b>${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</b>
           <span>${p.pos} · ${p.age} anni · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
-          <span class="${p.agency ? '' : 'good'}">${p.agency ? '🔒 ' + esc(p.agency) : '🟢 nessun agente'}</span></span>
+          <span class="${p.agency ? '' : 'good'}">${p.agency ? '🔒 ' + esc(p.agency) : '🟢 nessun agente'}</span>
+          <span class="ti">${(p.traits || []).map(t => TRAITS[t].icon + ' ' + TRAITS[t].label).join(' · ')}</span></span>
         <span class="mk-rat"><span><small>OVR</small><b>${ex ? '' : '~'}${shownOvr(p)}</b></span><span><small>POT</small><b class="pot">${ex ? '' : '~'}${shownPot(p)}</b></span></span>
       </button>
       ${p.school ? `<div class="mk-bond"><small>Legame</small><div class="bar"><i style="width:${bond}%;background:${bond >= 70 ? 'var(--good)' : bond >= 30 ? 'var(--accent)' : 'var(--muted)'}"></i></div><b>${bond}</b></div>` : ''}
@@ -1536,7 +1557,7 @@ const UI = {
     const stats = t && p.gp ? `<div class="pl-stats"><span><b>${r1(avg(p, 'pts'))}</b>PTS</span><span><b>${r1(avg(p, 'reb'))}</b>REB</span><span><b>${r1(avg(p, 'ast'))}</b>AST</span></div>` : '';
     return `<button class="pl" onclick="UI.player(${p.id})">
       ${avatarSVG(p, 52)}
-      <span class="pl-main"><span class="pl-name"><b>${esc(p.name)}</b><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span></span>
+      <span class="pl-main"><span class="pl-name"><b>${esc(p.name)}</b><span class="ti">${(p.traits || []).map(t => TRAITS[t].icon).join('')}</span><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span></span>
         <span class="pl-sub">${p.pos} · ${p.age} anni${t ? ` · ${esc(t.name)} #${p.num}` : ''}${t && p.gp ? ` · ${p.gp} gare` : ''}</span>
         <span class="pl-meta">${meta}</span>${stats}</span>
       ${L && t ? `<span class="pl-last"><span class="grade ${gradeClass(L.grade)}">${L.grade}</span><small>ultima</small></span>` : ''}
@@ -1690,6 +1711,9 @@ const UI = {
       <div class="pc-head">${avatarSVG(p, 72)}<div class="ovr ${this.ovrClass(p.ovr)}">${ex ? '' : '~'}${shownOvr(p)}</div>
         <div><div class="pc-name">${esc(p.name)} ${mine ? '<span class="tag fa">tuo cliente</span>' : ''}</div>
         <div class="pc-sub">${POS_IT[p.pos]} · ${p.age} anni · potenziale ${ex ? '' : '~'}${shownPot(p)}</div></div></div>
+      <div class="traits">${traitChips(p)}</div>
+      <p class="story">${esc(storyOf(p))}</p>
+      ${(p.traits || []).map(t => `<p class="small muted trait-desc">${TRAITS[t].icon} <b>${TRAITS[t].label}</b>: ${TRAITS[t].desc}</p>`).join('')}
       <dl class="rows">
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) + ' · #' + p.num : p.school ? esc(p.school) : 'Free agent'}</dd>
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years}</dd>` : ''}
@@ -1802,7 +1826,7 @@ const Tutorial = {
     { t: 't-cl', h: 'I posti in agenzia', x: 'Puoi seguire un numero limitato di clienti. Per averne di più, amplia gli <b>Uffici</b> nella scheda Staff.' },
     { t: 't-ev', h: 'Gli imprevisti', x: 'Spesso succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede e con che probabilità. <b>Devi decidere prima di avanzare.</b> Alcune scelte cambiano anche l\'aspetto del giocatore!' },
     { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, ti pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
-    { t: 'tab-clients', h: 'Clienti', x: 'Qui ci sono le schede dei tuoi assistiti: contratto, morale, statistiche. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì negozi stipendio e anni. Chiedi troppo e il GM perde la pazienza. Usa <b>📞 Contatta</b> ogni settimana per tenerli contenti.' },
+    { t: 'tab-clients', h: 'Clienti', x: 'Qui ci sono le schede dei tuoi assistiti: contratto, morale, statistiche. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì negozi stipendio e anni. Chiedi troppo e il GM perde la pazienza. Usa <b>📞 Contatta</b> ogni settimana per tenerli contenti. Ogni giocatore ha un <b>carattere</b> (festaiolo, gentile, aggressivo…) che decide che tipo di imprevisti gli capitano.' },
     { t: 'tab-market', h: 'Mercato', x: 'Qui trovi i nuovi clienti: <b>prospetti</b> del college (vanno al Draft), <b>free agent</b> (senza squadra) e giocatori di altre agenzie. Usa 🔭 per osservare un prospetto, 🤝 per <b>coltivare un legame</b> prima del Draft e <b>Proponi</b> per convincerlo: una commissione più bassa lo convince più facilmente.' },
     { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre, migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
     { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Qui puoi anche assumere un <b>informatore</b>: all\'inizio è scarso, ma ti passa soffiate sui prospetti del prossimo Draft. Ogni livello aumenta le spese settimanali.' },
@@ -1861,6 +1885,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();
