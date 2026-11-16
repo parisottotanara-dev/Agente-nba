@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="0" fill="#0d1117"/>
+  <circle cx="256" cy="236" r="150" fill="#ff7a1a"/>
+  <g fill="none" stroke="#0d1117" stroke-width="12" stroke-linecap="round">
+    <circle cx="256" cy="236" r="150"/>
+    <line x1="106" y1="236" x2="406" y2="236"/>
+    <line x1="256" y1="86" x2="256" y2="386"/>
+    <path d="M150 130 Q230 236 150 342"/>
+    <path d="M362 130 Q282 236 362 342"/>
+  </g>
+  <text x="256" y="470" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="64" fill="#e6edf3" text-anchor="middle">AGENTE</text>
+</svg>
