@@ -116,7 +116,7 @@ function newGame(agencyName, agentName) {
     teams: TEAMS.map((t, i) => ({ id: i, city: t[0], name: t[1], abbr: t[2], market: t[3], color: t[4], color2: t[5], w: 0, l: 0 })),
     players: {}, clients: [], offers: [], inbox: [], news: [], nextId: 1, nextEv: 1,
     goals: {}, debtWeeks: 0, history: [], lastChampion: null, over: false,
-    seasonIncome: 0, seasonExpense: 0, recentEv: [], tutorialDone: false, teamRel: {}, brandRel: {},
+    seasonIncome: 0, seasonExpense: 0, recentEv: [], tutorialDone: false, teamRel: {}, brandRel: {}, talks: {},
   };
   // squadre: prima le star (nomi parodia, nella loro squadra), poi giocatori inventati
   const slots = [84, 79, 76, 73, 71, 69, 67, 65, 63, 61, 59, 57, 55];
@@ -298,16 +298,41 @@ function teamStrength(tid) {
 }
 const winProb = (a, b) => 1 / (1 + Math.exp(-(a - b) / 3.2));
 
+function pairRound() {
+  const ids = shuffle(S.teams.map(t => t.id)), m = {};
+  for (let i = 0; i < ids.length; i += 2) { m[ids[i]] = { opp: ids[i + 1], home: true }; m[ids[i + 1]] = { opp: ids[i], home: false }; }
+  return m;
+}
+// Voto di una partita: punti, rimbalzi e assist pesati, più un bonus se si vince.
+function gameGrade(pts, reb, ast, win) {
+  const gs = pts + reb * 0.5 + ast * 0.7 + (win ? 3 : 0);
+  const T = [[46, 'A+'], [39, 'A'], [34, 'A-'], [29, 'B+'], [24, 'B'], [20, 'B-'], [16, 'C+'], [12, 'C'], [9, 'C-'], [6, 'D']];
+  for (const [v, g] of T) if (gs >= v) return g;
+  return 'F';
+}
+const gradeClass = g => g[0] === 'A' ? 'ga' : g[0] === 'B' ? 'gb' : g[0] === 'C' ? 'gc' : 'gd';
 function simWeekGames() {
   const str = S.teams.map(t => teamStrength(t.id));
-  for (let g = 0; g < 4; g++) {
-    const ids = shuffle(S.teams.map(t => t.id));
-    for (let i = 0; i < ids.length; i += 2) {
-      const a = ids[i], b = ids[i + 1];
-      if (chance(winProb(str[a] + 1, str[b]))) { S.teams[a].w++; S.teams[b].l++; } else { S.teams[b].w++; S.teams[a].l++; }
+  if (!S.nextRound) S.nextRound = pairRound();
+  const rounds = [S.nextRound, pairRound(), pairRound(), pairRound()];
+  const results = []; // per ogni giornata: { teamId: { opp, home, win, us, them } }
+  for (const rd of rounds) {
+    const res = {};
+    for (const [a, g] of Object.entries(rd)) {
+      if (!g.home) continue;
+      const b = g.opp, ai = +a;
+      const win = chance(winProb(str[ai] + 1, str[b]));
+      const base = randi(98, 116), diff = randi(1, 18);
+      const sa = win ? base + diff : base, sb = win ? base : base + diff;
+      if (win) { S.teams[ai].w++; S.teams[b].l++; } else { S.teams[b].w++; S.teams[ai].l++; }
+      res[ai] = { opp: b, home: true, win, us: sa, them: sb };
+      res[b] = { opp: ai, home: false, win: !win, us: sb, them: sa };
     }
+    results.push(res);
   }
+  S.nextRound = pairRound(); // il primo avversario della prossima settimana
   // statistiche individuali
+  for (const p of clients()) p.week = null;
   const MIN = [34, 33, 31, 29, 27, 24, 20, 16, 12, 8, 5, 3, 2, 1, 1];
   for (const t of S.teams) {
     const r = rosterOf(t.id).filter(p => !p.injury).sort((a, b) => b.ovr - a.ovr);
@@ -316,15 +341,25 @@ function simWeekGames() {
       const f = m / 36, q = Math.max(1, p.ovr - 40);
       const rebK = { PG: .07, SG: .09, SF: .13, PF: .2, C: .24 }[p.pos];
       const astK = { PG: .2, SG: .11, SF: .09, PF: .06, C: .05 }[p.pos];
+      const mine = isClient(p);
+      if (mine) p.week = [];
       for (let g = 0; g < 4; g++) {
         const form = 1 + gauss() * 0.22;
-        p.gp++;
-        p.pts += Math.max(0, q * 0.56 * f * form);
-        p.reb += Math.max(0, q * rebK * f * (1 + gauss() * .25));
-        p.ast += Math.max(0, q * astK * f * (1 + gauss() * .25));
+        const pts = Math.max(0, Math.round(q * 0.56 * f * form));
+        const reb = Math.max(0, Math.round(q * rebK * f * (1 + gauss() * .25)));
+        const ast = Math.max(0, Math.round(q * astK * f * (1 + gauss() * .25)));
+        p.gp++; p.pts += pts; p.reb += reb; p.ast += ast;
+        if (mine) { const g2 = results[g][t.id]; p.week.push({ opp: g2.opp, home: g2.home, win: g2.win, us: g2.us, them: g2.them, pts, reb, ast, grade: gameGrade(pts, reb, ast, g2.win) }); }
       }
+      if (mine) p.last = p.week[3];
     });
   }
+}
+const teamRank = tid => standings().findIndex(t => t.id === tid) + 1;
+function nextGameTxt(p) {
+  if (p.team == null || !S.nextRound || S.phase !== 'reg') return null;
+  const g = S.nextRound[p.team]; if (!g) return null;
+  return `${g.home ? 'vs' : '@'} ${S.teams[g.opp].name}`;
 }
 const avg = (p, k) => p.gp ? p[k] / p.gp : 0;
 const statLine = p => p.gp ? `${r1(avg(p, 'pts'))} pt · ${r1(avg(p, 'reb'))} rb · ${r1(avg(p, 'ast'))} as` : 'nessuna partita';
@@ -343,7 +378,7 @@ function affordable(tid) {
 function preferredYears(p) {
   return p.age <= 24 ? randi(3, 5) : p.age <= 29 ? randi(2, 4) : p.age <= 32 ? randi(1, 3) : randi(1, 2);
 }
-function makeOffersFor(p, n, fromTeam = null) {
+function makeOffersFor(p, n, fromTeam = null, ext = fromTeam != null) {
   const val = marketValue(p);
   const existing = new Set(S.offers.filter(o => o.pid === p.id).map(o => o.teamId));
   let teams = fromTeam != null ? [S.teams[fromTeam]] :
@@ -358,7 +393,7 @@ function makeOffersFor(p, n, fromTeam = null) {
     if (max < MIN_SAL) continue;
     const salary = r1(Math.max(MIN_SAL, max * rand(0.68, 0.9)));
     S.offers.push({ id: S.nextEv++, pid: p.id, teamId: t.id, salary, years: preferredYears(p),
-      max, patience: 3 + (rel >= 70 ? 1 : 0) - (rel < 30 ? 1 : 0), ext: fromTeam != null });
+      max, patience: 3 + (rel >= 70 ? 1 : 0) - (rel < 30 ? 1 : 0), ext });
     made++;
   }
   return made;
@@ -452,39 +487,98 @@ function fillRosters() {
 /* ================================================================== */
 /* Reclutamento                                                        */
 /* ================================================================== */
+/* ================================================================== */
+/* Trattativa con un giocatore per diventare il suo agente             */
+/* 1) gli chiedi un incontro: accetta solo se pensa che tu possa       */
+/*    rappresentarlo; 2) offri commissione e bonus alla firma, lui     */
+/*    risponde con una controfferta; 3) se tiri troppo perde pazienza. */
+/* ================================================================== */
 function starPower(p) { return p.school ? Math.max(p.ovr, (p.ovr + p.pot) / 2) : p.ovr; }
 function pitchCost(p) { return Math.round(Math.max(1500, (starPower(p) - 50) * 450) / 100) * 100; }
-function recruitChance(p, comm) {
-  let c = 0.5 + (S.rep - (starPower(p) - 55) * 1.6) / 80 + (4 - comm) * 0.1 + S.staff.marketing * 0.03;
+// Probabilità che accetti di sedersi al tavolo
+function openChance(p) {
+  let c = 0.55 + (S.rep - (starPower(p) - 55) * 1.6) / 80 + S.staff.marketing * 0.03 + (p.bond || 0) / 150;
   if (p.agency) c -= 0.15;
   c -= p.refusals * 0.12;
-  c += (p.bond || 0) / 200; // il legame costruito prima del Draft conta
-  return clamp(c, 0.02, 0.95);
+  return clamp(c, 0.04, 0.97);
 }
-function pitch(pid, comm) {
+const roundHalf = v => Math.round(v * 2) / 2;
+// Cosa vuole davvero (segreto): più è forte, meno commissione accetta e più bonus pretende
+function talkWants(p) {
+  const st = starPower(p), bond = p.bond || 0;
+  const comm = clamp(roundHalf(4 - (st - 58) / 11 + (S.rep - 30) / 50 + bond / 80), 1, 4);
+  const bonus = Math.max(0, Math.round((st - 64) * 7 * (1 - bond / 150) * (p.agency ? 1.3 : 1) / 5) * 5);
+  return { comm, bonus };
+}
+function startTalk(pid) {
   const p = P(pid);
-  if (clients().length >= capacity()) return { msg: 'Hai raggiunto il limite di clienti: amplia gli uffici.' };
-  if (p.lastPitch === S.turn) return { msg: 'Lo hai già contattato questa settimana.' };
-  if (p.lockedUntil > S.season) return { msg: 'Non vuole più sentirti fino alla prossima stagione.' };
+  if (clients().length >= capacity()) return { msg: 'Hai raggiunto il limite di clienti: amplia gli uffici.', type: 'bad' };
+  if (S.talks[pid]) return { ok: true };
+  if (p.lastPitch === S.turn) return { msg: 'Ti ha già detto di no questa settimana. Riprova la prossima.', type: 'warn' };
+  if (p.lockedUntil > S.season) return { msg: 'Non vuole più sentirti fino alla prossima stagione.', type: 'bad' };
   const cost = pitchCost(p);
-  if (S.cash < cost) return { msg: 'Non hai abbastanza contanti per la presentazione.' };
+  if (S.cash < cost) return { msg: `Per organizzare l'incontro servono ${fmt$(cost)}.`, type: 'bad' };
   spend(cost); p.lastPitch = S.turn;
-  if (chance(recruitChance(p, comm))) {
-    p.comm = comm; p.agency = S.agency; p.morale = randi(65, 85); p.scouted = true;
-    S.clients.push(p.id);
-    changeRep(clamp((p.ovr - 60) / 15, 0.1, 2));
-    addNews(`🤝 <b>${esc(p.name)}</b> (${p.pos}, ${p.ovr}) è il tuo nuovo assistito! Commissione ${comm}%.`, 'good');
-    if (p.team == null && !p.school && S.phase === 'fa') {
-      const n = makeOffersFor(p, offersCountFor(p));
-      if (n) addNews(`📨 Già ${n} offert${n > 1 ? 'e' : 'a'} per ${esc(p.name)}!`);
-    }
-    checkGoals();
-    return { ok: true, msg: `${p.name} ha firmato con la tua agenzia!` };
+  if (!chance(openChance(p))) {
+    p.refusals++;
+    if (p.refusals >= 3) p.lockedUntil = S.season + 1;
+    return { msg: `${p.name} non crede che tu possa rappresentarlo. ${p.refusals >= 3 ? 'Per un po\' non vuole più sentirti.' : 'Riprova più avanti.'}`, type: 'bad' };
   }
-  p.refusals++;
-  if (p.refusals >= 3) p.lockedUntil = S.season + 1;
-  return { msg: `${p.name} ha rifiutato. ${p.refusals >= 3 ? 'Non vuole più sentirti per un po\'.' : 'Puoi riprovare la prossima settimana.'}` };
+  const w = talkWants(p);
+  const patience = clamp(3 + Math.floor((p.bond || 0) / 35) + (S.rep >= 60 ? 1 : 0) - (p.agency ? 1 : 0), 2, 5);
+  // la sua prima richiesta è più alta di quello che accetterebbe davvero
+  const ask = { comm: clamp(w.comm - 1, 1, 4), bonus: Math.round(w.bonus * 1.4 / 5) * 5 };
+  S.talks[pid] = { want: w, ask, patience, max: patience, turn: S.turn, log: [`🤝 Ha accettato di incontrarti. Chiede ${talkTxt(ask)}.`] };
+  return { ok: true };
 }
+const talkTxt = o => `${o.comm}% di commissione${o.bonus ? ` + $${o.bonus}k alla firma` : ''}`;
+// Offerta del giocatore all'agente: commissione che vuoi tu e bonus che gli dai
+function talkOffer(pid, comm, bonus) {
+  const p = P(pid), t = S.talks[pid]; if (!t) return;
+  comm = clamp(roundHalf(comm), 1, 4); bonus = Math.max(0, Math.round(bonus));
+  if (bonus * 1000 > S.cash) return { msg: `Non hai $${bonus}k da dare alla firma.`, type: 'bad' };
+  t.log.push(`➡️ Offri ${talkTxt({ comm, bonus })}.`);
+  // quanto è lontana l'offerta da ciò che vuole davvero
+  const gap = Math.max(0, comm - t.want.comm) * 30 + Math.max(0, t.want.bonus - bonus) / Math.max(20, t.want.bonus) * 30;
+  if (gap <= 0) return talkSign(pid, comm, bonus);
+  t.patience -= gap > 30 ? 2 : 1;
+  if (t.patience <= 0) {
+    delete S.talks[pid];
+    p.refusals++; p.bond = Math.max(0, (p.bond || 0) - 10);
+    if (p.refusals >= 3) p.lockedUntil = S.season + 1;
+    addNews(`🚪 ${esc(p.name)} ha chiuso la trattativa con te.`, 'bad');
+    return { msg: `${p.name} si è stancato e ha chiuso la trattativa.`, type: 'bad', done: true };
+  }
+  // controfferta: se l'offerta non l'ha irritato si avvicina a te, ma mai oltre quello che vuole davvero
+  if (gap <= 30) {
+    const r5 = v => Math.round(v / 5) * 5;
+    t.ask = {
+      comm: Math.max(t.ask.comm, Math.min(t.want.comm, roundHalf((t.ask.comm + comm) / 2))),
+      bonus: Math.min(t.ask.bonus, Math.max(t.want.bonus, r5((t.ask.bonus + bonus) / 2))),
+    };
+  }
+  const mood = gap > 30 ? '😠 L\'offerta lo ha irritato.' : '🤔 Ci pensa.';
+  t.log.push(`⬅️ ${mood} Controfferta: ${talkTxt(t.ask)}.`);
+  return { msg: `Controfferta: ${talkTxt(t.ask)}`, type: gap > 30 ? 'warn' : 'info' };
+}
+function talkAcceptAsk(pid) { const t = S.talks[pid]; if (!t) return; if (t.ask.bonus * 1000 > S.cash) return { msg: `Non hai $${t.ask.bonus}k da dare alla firma.`, type: 'bad' }; return talkSign(pid, t.ask.comm, t.ask.bonus); }
+function talkSign(pid, comm, bonus) {
+  const p = P(pid);
+  delete S.talks[pid];
+  if (clients().length >= capacity()) return { msg: 'Non hai più posti in agenzia.', type: 'bad', done: true };
+  if (bonus) spend(bonus * 1000);
+  p.comm = comm; p.agency = S.agency; p.morale = clamp(60 + Math.round((p.bond || 0) / 4) + (bonus ? 8 : 0), 0, 100); p.scouted = true;
+  S.clients.push(p.id);
+  changeRep(clamp((p.ovr - 60) / 15, 0.1, 2));
+  addNews(`🤝 <b>${esc(p.name)}</b> (${p.pos}, ${p.ovr}) è il tuo nuovo assistito! Commissione ${comm}%${bonus ? `, bonus alla firma $${bonus}k` : ''}.`, 'good');
+  if (p.team == null && !p.school && S.phase === 'fa') {
+    const n = makeOffersFor(p, offersCountFor(p));
+    if (n) addNews(`📨 Già ${n} offert${n > 1 ? 'e' : 'a'} per ${esc(p.name)}!`);
+  }
+  checkGoals();
+  return { msg: `${p.name} ha firmato con la tua agenzia: ${comm}%${bonus ? ` e $${bonus}k alla firma` : ''}.`, type: 'good', done: true };
+}
+function talkQuit(pid) { delete S.talks[pid]; }
 function scout(pid) {
   const p = P(pid), cost = Math.max(1000, 3000 - S.staff.scout * 400);
   if (S.cash < cost) return 'Fondi insufficienti.';
@@ -536,6 +630,10 @@ function condOk(e, p) {
   const c = e.cond || {}, t = p ? teamOf(p) : null;
   if (!p) return !!e.any;
   if (e.any) return false;
+  if (p.school ? !(e.college || COLLEGE_OK.has(e.id)) : e.college) return false; // al college solo imprevisti da college
+  if (c.minAge && p.age < c.minAge) return false;
+  if (c.maxAge && p.age > c.maxAge) return false;
+  if (c.invented && (p.vip || p.star)) return false; // i fatti più pesanti solo per giocatori inventati
   if (c.team && !t) return false;
   if (c.healthy && p.injury) return false;
   if (c.inj && !p.injury) return false;
@@ -556,7 +654,7 @@ function condOk(e, p) {
 function fillText(t, d) {
   return t.replace(/\{P\}/g, d.p || '').replace(/\{P1\}/g, (d.p || '').split(' ').pop()).replace(/\{T\}/g, d.t || '')
     .replace(/\{C\}/g, d.c).replace(/\{B\}/g, d.b).replace(/\{R\}/g, d.r).replace(/\{N\}/g, d.n)
-    .replace(/\{age\}/g, d.age ?? '').replace(/\{num\}/g, d.num ?? '');
+    .replace(/\{age\}/g, d.age ?? '').replace(/\{num\}/g, d.num ?? '').replace(/\{TD\}/g, d.td || '');
 }
 // Quanto vale un giocatore per media e marchi: i guadagni degli imprevisti si adattano al suo livello.
 function fameMult(p) { return p ? clamp(0.3 + (p.ovr - 60) / 22 + p.hype / 110, 0.25, 3) : 1; }
@@ -586,12 +684,12 @@ function createEvent(e, p) {
   const d = {
     p: p ? p.name : '', t: p && teamOf(p) ? teamName(teamOf(p)) : '', c: pick(celebs.length ? celebs : CELEBS.filter(c => !leagueNames.has(c))), r: pick(RIVALS),
     n: others.length ? pick(others).name : 'un avversario', age: p ? p.age : '', num: p ? p.num : '',
-    b: pick(BRANDS.filter(b => !p || !p.sponsors.some(s => s.brand === b))), mult: r1(fameMult(p)),
+    b: pick(BRANDS.filter(b => !p || !p.sponsors.some(s => s.brand === b))), mult: r1(fameMult(p)), td: teamName(pick(S.teams)),
   };
   if (e.cond && e.cond.sponsor && p) d.b = pick(p.sponsors).brand;
   // il valore dello sponsor dipende dal livello del giocatore e dal rapporto col marchio
   if (p) { d.value = r1(sponsorValue(p) * (0.8 + brandRel(d.b) / 250)); d.years = randi(1, 3); }
-  S.inbox.push({ id: S.nextEv++, ev: e.id, pid: p ? p.id : null, ico: e.ico, title: fillText(e.title, d), text: fillText(e.text, d), data: d });
+  S.inbox.push({ id: S.nextEv++, ev: e.id, rare: !!e.rare, pid: p ? p.id : null, ico: e.ico, title: fillText(e.title, d), text: fillText(e.text, d), data: d });
   S.recentEv.push(e.id);
   if (S.recentEv.length > 45) S.recentEv.shift();
   if (p) p.lastEv = S.turn;
@@ -599,18 +697,26 @@ function createEvent(e, p) {
 function genWeeklyEvents() {
   const k = clients().filter(p => !p.retired).length;
   const active = S.phase === 'reg' || S.phase === 'fa';
-  const p1 = active ? 0.55 + Math.min(k, 12) * 0.025 : 0.25;         // 2 clienti ≈ 60%, 12 clienti ≈ 85%
-  const p2 = active && k >= 4 ? 0.05 + Math.min(k, 15) * 0.015 : 0;  // 10 clienti ≈ 20%
-  const p3 = active && k >= 10 ? 0.08 : 0;
+  const p1 = active ? 0.36 + Math.min(k, 12) * 0.02 : 0.2;           // 2 clienti ≈ 40%, 12 clienti ≈ 60%
+  const p2 = active && k >= 5 ? 0.03 + Math.min(k, 15) * 0.01 : 0;   // 10 clienti ≈ 13%
+  const p3 = active && k >= 12 ? 0.04 : 0;
   const n = chance(p1) ? 1 + (chance(p2) ? 1 : 0) + (chance(p3) ? 1 : 0) : 0;
+  // colpo di scena: raro, una volta sola per giocatore e per tipo
+  if (active && k && chance(0.008 + 0.002 * Math.min(k, 12))) {
+    const cand = shuffle(clients().filter(p => !p.retired && !S.inbox.some(x => x.pid === p.id)));
+    for (const p of cand) {
+      const pool = EVENTS.filter(e => e.rare && condOk(e, p) && !(p.rareSeen || []).includes(e.id));
+      if (pool.length) { const e = pick(pool); p.rareSeen = [...(p.rareSeen || []), e.id]; createEvent(e, p); break; }
+    }
+  }
   for (let i = 0; i < n; i++) {
     // chi ha appena avuto un imprevisto aspetta qualche settimana
-    const free = clients().filter(p => !p.retired && !S.inbox.some(x => x.pid === p.id) && S.turn - (p.lastEv ?? -99) >= 3);
+    const free = clients().filter(p => !p.retired && !S.inbox.some(x => x.pid === p.id) && S.turn - (p.lastEv ?? -99) >= 4);
     let p = null, pool = [];
     for (let tries = 0; tries < 6 && !pool.length; tries++) {
       p = free.length && !chance(0.1) ? pick(free) : null;
       if (p && p.morale < 35 && chance(0.5)) pool = EVENTS.filter(e => e.id === 'rivale');
-      else pool = EVENTS.filter(e => condOk(e, p) && !S.recentEv.includes(e.id));
+      else pool = EVENTS.filter(e => !e.rare && condOk(e, p) && !S.recentEv.includes(e.id));
     }
     if (pool.length) createEvent(pick(pool), p);
   }
@@ -634,6 +740,9 @@ function fxText(f, inst) {
   if (f.br) o.push(`rapporto con lo sponsor ${f.br > 0 ? '+' : ''}${f.br}`);
   if (f.hype) o.push(`popolarità ${f.hype > 0 ? '+' : ''}${f.hype}`);
   if (f.ovr) o.push(`valutazione ${f.ovr > 0 ? '+' : ''}${f.ovr}`);
+  if (f.pot) o.push(`potenziale ${f.pot > 0 ? '+' : ''}${f.pot}`);
+  if (f.draftBoost) o.push(f.draftBoost > 0 ? 'sale nelle previsioni del Draft' : 'scende nelle previsioni del Draft');
+  if (f.stayCollege) o.push('salta questo Draft');
   if (f.inj) o.push(`fermo ${f.inj} sett.`);
   if (f.comm) o.push(`commissione ${f.comm > 0 ? '+' : ''}${f.comm}%`);
   if (f.leave) o.push('lascia l\'agenzia');
@@ -659,6 +768,9 @@ function applyFx(f, inst, p) {
   if (f.tr) changeTeamRel(p.team, f.tr);
   if (f.hype) p.hype = clamp(p.hype + f.hype, 0, 100);
   if (f.ovr) { p.ovr = clamp(p.ovr + f.ovr, 35, 99); p.pot = Math.max(p.pot, p.ovr); }
+  if (f.pot) p.pot = clamp(p.pot + f.pot, p.ovr, 99);
+  if (f.draftBoost) p.draftBoost = (p.draftBoost || 0) + f.draftBoost;
+  if (f.stayCollege && p.school) p.skipDraft = S.season;
   if (f.inj) p.injury = Math.max(p.injury, f.inj);
   if (f.comm) p.comm = clamp(p.comm + f.comm, 1, 4);
   if (f.look) { p.look = { ...(p.look || {}), ...f.look }; if (f.look.number != null) p.num = f.look.number; }
@@ -749,11 +861,11 @@ function lose(p) {
   changeRep(-clamp((p.ovr - 60) / 8, 0.5, 4));
   addNews(`💔 Hai perso ${esc(p.name)}, passato a un'agenzia rivale.`, 'bad');
 }
-function tradePlayer(p, toContender) {
+function tradePlayer(p, toContender, dest = null) {
   const cur = p.team;
   let pool = S.teams.filter(t => t.id !== cur);
   if (toContender) pool = standings().filter(t => t.id !== cur).slice(0, 12);
-  const to = pick(pool);
+  const to = dest != null ? S.teams[dest] : pick(pool);
   // contropartita: un giocatore di valore simile fa il viaggio opposto
   const back = rosterOf(to.id).filter(x => !isClient(x)).sort((a, b) => Math.abs(a.salary - p.salary) - Math.abs(b.salary - p.salary))[0];
   if (back) back.team = cur;
@@ -835,6 +947,54 @@ function bondedJoin() {
 }
 
 /* ================================================================== */
+/* Consigliare un giocatore a una squadra                              */
+/* ================================================================== */
+// Posizione al Draft di ogni squadra se la stagione finisse oggi (le peggiori scelgono prima)
+const draftSlot = tid => [...standings()].reverse().findIndex(t => t.id === tid) + 1;
+const draftScore = p => p.ovr * 0.55 + p.pot * 0.45 + p.teamNoise * 3 + (p.draftBoost || 0);
+// Dove lo sceglierebbero oggi le squadre
+function draftProjection(p) {
+  if (!p.school) return null;
+  const pros = Object.values(S.players).filter(x => x.school && !x.retired && x.skipDraft !== S.season).sort((a, b) => draftScore(b) - draftScore(a));
+  return pros.indexOf(p) + 1;
+}
+function recChance(p, tid) {
+  const rel = teamRel(tid);
+  let c = (p.school ? 0.25 : p.team == null ? 0.2 : 0.08) + rel / 100 * 0.6;
+  if (p.school) { // promettere una scelta molto più alta del suo valore è difficile
+    const gap = draftSlot(tid) - (draftProjection(p) || 60);
+    if (gap < 0) c -= Math.min(0.4, -gap * 0.03);
+  } else if (p.team != null) c *= p.years > 1 ? 1 : 1.3;
+  return clamp(c, 0.03, 0.9);
+}
+function recommend(pid, tid) {
+  const p = P(pid), t = S.teams[tid];
+  if (p.lastRec === S.turn) return { msg: `Hai già parlato di ${p.name} con una squadra questa settimana.`, type: 'warn' };
+  if (p.team === tid) return { msg: `${p.name} gioca già nei ${t.name}.`, type: 'warn' };
+  p.lastRec = S.turn;
+  const ok = chance(recChance(p, tid));
+  if (!ok) {
+    changeTeamRel(tid, -2);
+    return { msg: `I ${t.name} ti hanno ascoltato, ma non sono convinti. Il rapporto con loro cala un po'.`, type: 'bad' };
+  }
+  changeTeamRel(tid, 1);
+  if (p.school) {
+    p.promise = tid; p.draftBoost = (p.draftBoost || 0) + 4;
+    if (!isClient(p)) p.bond = clamp((p.bond || 0) + 10, 0, 100);
+    addNews(`📣 I ${esc(teamName(t))} hanno messo ${esc(p.name)} nella loro lista: se è libero al loro turno, lo sceglieranno.`, 'good');
+    return { msg: `I ${t.name} lo sceglieranno se è ancora libero alla loro scelta (oggi la #${draftSlot(tid)}).`, type: 'good' };
+  }
+  if (p.team == null) {
+    makeOffersFor(p, 1, tid, false);
+    return { msg: `I ${t.name} gli hanno fatto un'offerta: la trovi nelle trattative.`, type: 'good' };
+  }
+  const to = tradePlayer(p, false, tid);
+  p.morale = clamp(p.morale + 6, 0, 100);
+  addNews(`🔁 Grazie a te ${esc(p.name)} passa ai ${esc(teamName(to))}.`, 'good');
+  return { msg: `Scambio fatto: ${p.name} ora gioca nei ${to.name}.`, type: 'good' };
+}
+
+/* ================================================================== */
 /* Avanzamento                                                         */
 /* ================================================================== */
 function advance() {
@@ -845,6 +1005,7 @@ function advance() {
     return;
   }
   S.turn++;
+  let played = false;
   spend(weeklyCost());
   S.rep = r1(S.rep * 0.997); // la fama va mantenuta
   for (const p of clients()) for (const sp of p.sponsors) earn(sp.value * 1e6 * SPONSOR_CUT / TURNS_PER_YEAR);
@@ -861,7 +1022,7 @@ function advance() {
       addNews(`🏀 Inizia la stagione regolare ${seasonLabel()}!`, 'gold');
     } else { S.week++; makeOffersForClientFAs(); }
   } else if (S.phase === 'reg') {
-    simWeekGames();
+    simWeekGames(); played = true;
     for (const p of clients()) if (p.team != null) earn(p.salary * 1e6 * p.comm / 100 / REG_WEEKS);
     for (const p of Object.values(S.players)) {
       if (p.injury) p.injury--;
@@ -903,11 +1064,16 @@ function advance() {
   checkGoals();
   save(); UI.render();
   if (S.over) return UI.gameOver();
-  if (S.inbox.length) {
-    UI.focusEvents(false);
-    toast(S.inbox.length === 1 ? S.inbox[0].title : `${S.inbox.length} imprevisti questa settimana: scegli cosa fare.`, 'event', 'Imprevisto!');
-  } else if (UI.pendingToast) toast(...UI.pendingToast);
-  UI.pendingToast = null;
+  const after = () => {
+    if (S.inbox.length) {
+      UI.focusEvents(false);
+      const rare = S.inbox.find(e => e.rare);
+      if (rare) toast(rare.title, 'goal', 'Colpo di scena!');
+      else toast(S.inbox.length === 1 ? S.inbox[0].title : `${S.inbox.length} imprevisti questa settimana: scegli cosa fare.`, 'event', 'Imprevisto!');
+    } else if (UI.pendingToast) toast(...UI.pendingToast);
+    UI.pendingToast = null;
+  };
+  if (played) UI.showWeek(after); else after();
 }
 
 function allStar() {
@@ -986,17 +1152,22 @@ function runDraft() {
   // lotteria: rimescola le prime 4 tra le 6 peggiori
   const top = shuffle(order.slice(0, 6));
   const draftOrder = [...top.slice(0, 4), ...order.filter(id => !top.slice(0, 4).includes(id))];
-  const pros = Object.values(S.players).filter(p => p.school && !p.retired)
-    .sort((a, b) => (b.ovr * 0.55 + b.pot * 0.45 + b.teamNoise * 3) - (a.ovr * 0.55 + a.pot * 0.45 + a.teamNoise * 3));
+  const pros = Object.values(S.players).filter(p => p.school && !p.retired && p.skipDraft !== S.season)
+    .sort((a, b) => draftScore(b) - draftScore(a));
+  const avail = [...pros];
   let n = 0;
   const mine = [];
   for (let round = 1; round <= 2; round++) {
     for (const tid of draftOrder) {
-      const p = pros[n]; if (!p) break;
+      if (!avail.length) break;
+      // una squadra mantiene la promessa se il ragazzo non è troppo indietro nella sua lista
+      const pi = avail.findIndex(x => x.promise === tid);
+      const p = avail.splice(pi >= 0 && pi <= 14 ? pi : 0, 1)[0];
       n++;
+      if (pi >= 0 && pi <= 14 && isClient(p)) changeTeamRel(tid, 3);
       const sal = round === 1 ? r1(Math.max(2.2, 11 - (n - 1) * 0.3)) : MIN_SAL;
       p.school = null; p.team = tid; p.salary = sal; p.years = round === 1 ? 4 : 2; p.rookieSeason = S.season + 1;
-      p.draftPick = n;
+      p.draftPick = n; p.promise = null; p.draftBoost = 0;
       if (isClient(p)) { mine.push(p); changeRep(round === 1 ? Math.max(0.5, (31 - n) / 5) : 0.3); p.morale = clamp(p.morale + (round === 1 ? 15 : 0), 0, 100); }
     }
   }
@@ -1006,6 +1177,7 @@ function runDraft() {
   if (mine.some(p => p.draftPick <= 5)) checkGoal('top5', true);
   // non scelti → free agent
   for (const p of Object.values(S.players)) if (p.school && !p.retired) {
+    if (p.skipDraft === S.season) { p.promise = null; continue; } // resta un altro anno al college
     p.school = null;
     if (isClient(p)) addNews(`😕 ${esc(p.name)} non è stato scelto: ora è free agent.`, 'warn');
   }
@@ -1059,6 +1231,7 @@ function offseason() {
   for (const t of S.teams) { t.w = 0; t.l = 0; if (S.teamRel[t.id] != null) S.teamRel[t.id] = Math.round(S.teamRel[t.id] + (50 - S.teamRel[t.id]) * 0.2); }
   for (const b of Object.keys(S.brandRel)) S.brandRel[b] = Math.round(S.brandRel[b] + (50 - S.brandRel[b]) * 0.2);
   S.offers = [];
+  S.talks = {};
   S.season++;
   S.seasonIncome = 0; S.seasonExpense = 0;
   genDraftClass();
@@ -1213,16 +1386,9 @@ const UI = {
         return `<button class="item deal" onclick="UI.negotiation(${pid})">${avatarSVG(p, 40)}<div><b>${esc(p.name)}</b><small>${n} offert${n > 1 ? 'e' : 'a'}${S.offers.some(o => o.pid === pid && o.ext) ? ' · rinnovo' : ''}</small></div><span class="go">Negozia ›</span></button>`;
       }).join('')}</div>` : ''}
 
-      <div class="sec"><h2>⭐ I tuoi campioni</h2><a href="#" onclick="UI.go('clients');return false">Vedi tutti</a></div>
-      <div class="cards">
-        ${cl.sort((a, b) => b.ovr - a.ovr).map(p => {
-          const t = teamOf(p);
-          return `<button class="fig" onclick="UI.player(${p.id})"><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span>${avatarSVG(p, 64)}
-            <b>${esc(p.name)}</b><span>${p.pos} · ${t ? esc(t.name) : p.school ? 'prospetto Draft' : 'free agent'}</span>
-            ${p.injury ? '<span class="tag inj">infortunato</span>' : ''}</button>`;
-        }).join('')}
-        ${cl.length < capacity() ? `<button class="fig add" onclick="UI.go('market')"><div class="plus">＋</div><span>Trova un nuovo cliente</span></button>` : ''}
-      </div>
+      <div class="sec"><h2>⭐ I tuoi giocatori</h2><a href="#" onclick="UI.go('clients');return false">Schede complete</a></div>
+      <div class="pls">${[...cl].sort((a, b) => (b.team != null) - (a.team != null) || b.salary - a.salary || b.ovr - a.ovr).map(p => this.clientRow(p)).join('')}
+        ${cl.length < capacity() ? `<button class="pl add" onclick="UI.go('market')">＋ Trova un nuovo cliente nel Mercato</button>` : ''}</div>
 
       <div class="sec"><h2>📰 Dalla lega</h2></div>
       <div class="feed">${feed}</div>
@@ -1238,7 +1404,7 @@ const UI = {
     const def = EVENTS.find(x => x.id === e.ev);
     const p = e.pid != null ? P(e.pid) : null;
     if (!def) return '';
-    return `<div class="ev">
+    return `<div class="ev ${e.rare ? 'rare' : ''}">${e.rare ? '<div class="rare-tag">⚡ Colpo di scena · capita di rado</div>' : ''}
       <div class="ev-top">${p ? `<div class="ev-av">${avatarSVG(p, 54)}<span>${e.ico}</span></div>` : `<div class="ev-ico">${e.ico}</div>`}
         <div><h3>${esc(e.title)}</h3><p>${esc(e.text)}</p></div></div>
       <div class="choices">${def.choices.map((ch, i) => {
@@ -1284,6 +1450,7 @@ const UI = {
       <div class="actions">
         ${offers ? `<button class="btn primary sm" onclick="UI.negotiation(${p.id})">Offerte (${offers})</button>` : ''}
         <button class="btn sm" onclick="UI.doContact(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>📞 Contatta</button>
+        <button class="btn sm" onclick="UI.recModal(${p.id})">📣 Consiglia</button>
         <button class="btn sm" onclick="UI.player(${p.id})">Scheda</button>
       </div></div>`;
   },
@@ -1358,35 +1525,117 @@ const UI = {
   doCultivate(pid) { const r = cultivate(pid); toast(r.msg, r.type); save(); this.render(); },
   doScout(pid) { toast(scout(pid), 'intel', 'Rapporto scout'); save(); this.render(); },
 
-  pitchModal(pid, comm = 3) {
-    const p = P(pid);
-    this.pitchComm = comm;
-    const c = recruitChance(p, comm), cost = pitchCost(p);
-    const blocked = p.lockedUntil > S.season ? 'Non vuole parlarti fino alla prossima stagione.' : p.lastPitch === S.turn ? 'Già contattato questa settimana.' : '';
+  /* ---------- Righe dei clienti in Home ---------- */
+  clientRow(p) {
+    const t = teamOf(p), L = p.last, ng = nextGameTxt(p);
+    let meta;
+    if (p.injury) meta = `🚑 Fermo ancora ${p.injury} sett.`;
+    else if (p.school) { const pr = draftProjection(p); meta = `🎓 ${esc(p.school)} · proiezione Draft <b>#${pr}</b>${p.promise != null ? ` · 📣 promesso ai ${esc(S.teams[p.promise].name)}` : ''}`; }
+    else if (!t) { const n = S.offers.filter(o => o.pid === p.id).length; meta = `🆓 Senza squadra${n ? ` · <b>${n} offert${n > 1 ? 'e' : 'a'}</b>` : ''}`; }
+    else meta = `${ng ? `📅 Prossima: <b>${esc(ng)}</b> · ` : ''}🏆 ${teamRank(t.id)}ª in classifica (${t.w}-${t.l})`;
+    const stats = t && p.gp ? `<div class="pl-stats"><span><b>${r1(avg(p, 'pts'))}</b>PTS</span><span><b>${r1(avg(p, 'reb'))}</b>REB</span><span><b>${r1(avg(p, 'ast'))}</b>AST</span></div>` : '';
+    return `<button class="pl" onclick="UI.player(${p.id})">
+      ${avatarSVG(p, 52)}
+      <span class="pl-main"><span class="pl-name"><b>${esc(p.name)}</b><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span></span>
+        <span class="pl-sub">${p.pos} · ${p.age} anni${t ? ` · ${esc(t.name)} #${p.num}` : ''}${t && p.gp ? ` · ${p.gp} gare` : ''}</span>
+        <span class="pl-meta">${meta}</span>${stats}</span>
+      ${L && t ? `<span class="pl-last"><span class="grade ${gradeClass(L.grade)}">${L.grade}</span><small>ultima</small></span>` : ''}
+    </button>`;
+  },
+
+  /* ---------- Risultati della settimana ---------- */
+  showWeek(after) {
+    const rows = clients().filter(p => p.week && p.week.length).sort((a, b) => b.salary - a.salary);
+    if (!rows.length) { after && after(); return; }
+    let box = document.getElementById('weekres');
+    if (!box) { box = document.createElement('div'); box.id = 'weekres'; document.body.appendChild(box); }
+    const best = rows.reduce((m, p) => { const g = p.week.reduce((x, y) => (y.pts + y.reb * .5 + y.ast * .7) > (x.pts + x.reb * .5 + x.ast * .7) ? y : x); return !m || (g.pts + g.reb * .5 + g.ast * .7) > m.s ? { p, g, s: g.pts + g.reb * .5 + g.ast * .7 } : m; }, null);
+    box.innerHTML = `<div class="wr-panel" role="dialog" aria-label="Risultati della settimana">
+      <div class="wr-title">Risultati · settimana ${S.week - 1 || REG_WEEKS}</div>
+      ${best && best.g.grade[0] === 'A' ? `<div class="wr-top">🔥 Partita top: <b>${esc(best.p.name)}</b> ${best.g.pts} pt · ${best.g.reb} rb · ${best.g.ast} as <span class="grade ${gradeClass(best.g.grade)}">${best.g.grade}</span></div>` : ''}
+      <div class="wr-list">${rows.map(p => {
+        const L = p.week[3], w = p.week.filter(g => g.win).length;
+        return `<div class="wr-row ${L.grade[0] === 'A' ? 'top' : ''}">${avatarSVG(p, 40)}
+          <div class="wr-info"><b>${esc(p.name)}</b><span>${L.win ? '✅ V' : '❌ P'} ${L.us}-${L.them} ${L.home ? 'vs' : '@'} ${esc(S.teams[L.opp].name)} · settimana ${w}-${4 - w}</span>
+          <span class="wr-line">${L.pts} pt · ${L.reb} rb · ${L.ast} as</span></div>
+          <span class="grade big ${gradeClass(L.grade)}">${L.grade}</span></div>`;
+      }).join('')}</div>
+      <button class="btn primary wr-go" id="wr-go">Continua ▶</button></div>`;
+    box.hidden = false;
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; box.hidden = true; clearTimeout(this.wrTimer); after && after(); };
+    document.getElementById('wr-go').onclick = close;
+    box.onclick = e => { if (e.target === box) close(); };
+    this.wrTimer = setTimeout(close, 6000 + rows.length * 600);
+  },
+
+  /* ---------- Trattativa per diventare suo agente ---------- */
+  pitchModal(pid) {
+    const p = P(pid), t = S.talks[pid];
+    if (!t) {
+      const c = openChance(p), cost = pitchCost(p);
+      const blocked = p.lockedUntil > S.season ? 'Non vuole parlarti fino alla prossima stagione.' : p.lastPitch === S.turn ? 'Ti ha già detto di no questa settimana.' : '';
+      return this.openModal(`
+        <div class="tk-head">${avatarSVG(p, 64)}<div><h3>${esc(p.name)}</h3><p class="muted small">${p.pos} · ${p.age} anni · OVR ${exact(p) ? '' : '~'}${shownOvr(p)} · POT ${exact(p) ? '' : '~'}${shownPot(p)}<br>${p.agency ? '🔒 assistito da ' + esc(p.agency) : '🟢 senza agente'}${p.school ? ` · legame ${p.bond || 0}/100` : ''}</p></div></div>
+        <p>Prima di tutto deve credere che tu possa rappresentarlo. Se accetta l'incontro, si apre una trattativa: tu offri, lui fa la sua controfferta.</p>
+        <div class="tk-odds"><span>Probabilità che accetti di incontrarti</span><b class="${c > .6 ? 'good' : c > .3 ? 'warn' : 'bad'}">${Math.round(c * 100)}%</b></div>
+        <p class="small muted">Organizzare l'incontro costa ${fmt$(cost)}. Contano la tua reputazione, il legame con lui e se ha già un agente.</p>
+        ${blocked ? `<p class="bad">${blocked}</p>` : ''}
+        <div class="actions"><button class="btn primary" onclick="UI.doStartTalk(${pid})" ${blocked ? 'disabled' : ''}>Chiedi un incontro — ${fmt$(cost)}</button>
+        <button class="btn" onclick="UI.closeModal()">Annulla</button></div>`);
+    }
+    const hearts = '🏀'.repeat(Math.max(0, t.patience)) + '<span class="off">' + '🏀'.repeat(Math.max(0, t.max - t.patience)) + '</span>';
+    const sug = { comm: Math.min(4, t.ask.comm + 0.5), bonus: Math.max(0, Math.round(t.ask.bonus * 0.75 / 5) * 5) };
     this.openModal(`
-      <h3>Proposta a ${esc(p.name)}</h3>
-      <p class="muted small">${p.pos} · ${p.age} anni · OVR ${exact(p) ? '' : '~'}${shownOvr(p)} · POT ${exact(p) ? '' : '~'}${shownPot(p)} · ${p.agency ? 'assistito da ' + esc(p.agency) : 'senza agente'}</p>
-      <label class="small muted">Commissione richiesta: <b id="cm">${comm}%</b></label>
-      <input type="range" min="1" max="4" step="1" value="${comm}" oninput="UI.updPitch(${pid}, +this.value)">
-      <p>Probabilità di successo: <span id="pc" class="chance ${this.chCls(c)}">${Math.round(c * 100)}%</span></p>
-      <p class="small muted">Costo della presentazione: ${fmt$(cost)}. Commissione più bassa = più facile convincerlo, ma guadagni meno.
-        ${p.team != null ? `Guadagno stimato: <b id="pg">${fmt$(p.salary * 1e6 * comm / 100)}</b>/anno.` : ''}</p>
-      ${blocked ? `<p class="bad">${blocked}</p>` : ''}
-      <div class="actions"><button class="btn primary" onclick="UI.doPitch(${pid}, UI.pitchComm)" ${blocked ? 'disabled' : ''}>Presenta l'agenzia — ${fmt$(cost)}</button>
-      <button class="btn" onclick="UI.closeModal()">Annulla</button></div>`);
+      <div class="tk-head">${avatarSVG(p, 64)}<div><h3>Trattativa con ${esc(p.name)}</h3><p class="muted small">${p.pos} · ${p.age} anni · OVR ${exact(p) ? '' : '~'}${shownOvr(p)}${p.agency ? ' · 🔒 ' + esc(p.agency) : ''}</p></div></div>
+      <div class="tk-pat"><span>Pazienza</span><span class="hearts">${hearts}</span></div>
+      <div class="tk-ask"><small>La sua richiesta</small><b>${talkTxt(t.ask)}</b></div>
+      <ul class="tk-log">${t.log.slice(-5).map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+      <div class="neg-form">
+        <label>Commissione che chiedi: <b id="tk-cv">${sug.comm}%</b><input id="tk-c" type="range" min="1" max="4" step="0.5" value="${sug.comm}" oninput="document.getElementById('tk-cv').textContent=this.value+'%'"></label>
+        <label>Bonus alla firma (migliaia di $)<input id="tk-b" type="number" min="0" step="5" value="${sug.bonus}"></label>
+      </div>
+      <p class="small muted">Più commissione chiedi, più guadagni ogni anno, ma più si irrita. Un bonus alla firma lo ammorbidisce. Un'offerta troppo lontana gli fa perdere due 🏀 di pazienza.</p>
+      <div class="actions">
+        <button class="btn primary" onclick="UI.doTalkOffer(${pid})">Fai l'offerta</button>
+        <button class="btn good" onclick="UI.doTalkAccept(${pid})">Accetta la sua richiesta</button>
+        <button class="btn bad" onclick="UI.doTalkQuit(${pid})">Lascia perdere</button>
+      </div>`);
   },
-  chCls: c => c > .6 ? 'good' : c > .3 ? 'warn' : 'bad',
-  updPitch(pid, comm) {
-    const p = P(pid), c = recruitChance(p, comm);
-    this.pitchComm = comm;
-    document.getElementById('cm').textContent = comm + '%';
-    const pc = document.getElementById('pc'); pc.textContent = Math.round(c * 100) + '%'; pc.className = 'chance ' + this.chCls(c);
-    const pg = document.getElementById('pg'); if (pg) pg.textContent = fmt$(p.salary * 1e6 * comm / 100);
+  doStartTalk(pid) {
+    const r = startTalk(pid); save(); this.render();
+    if (r.ok) { toast(`${P(pid).name} ha accettato di incontrarti!`, 'good', 'Si tratta!'); this.pitchModal(pid); }
+    else { this.closeModal(); toast(r.msg, r.type); }
   },
-  doPitch(pid, comm) {
-    const r = pitch(pid, comm);
-    save(); this.closeModal(); this.render(); toast(r.msg, r.ok ? 'good' : 'bad');
+  doTalkOffer(pid) {
+    const c = +document.getElementById('tk-c').value, b = +document.getElementById('tk-b').value || 0;
+    const r = talkOffer(pid, c, b); save(); this.render();
+    if (!r) return;
+    if (r.done) { this.closeModal(); toast(r.msg, r.type, r.type === 'good' ? 'Firmato!' : undefined); }
+    else { toast(r.msg, r.type); this.pitchModal(pid); }
   },
+  doTalkAccept(pid) { const r = talkAcceptAsk(pid); save(); this.render(); if (!r) return; if (r.done) { this.closeModal(); toast(r.msg, r.type, 'Firmato!'); } else toast(r.msg, r.type); },
+  doTalkQuit(pid) { talkQuit(pid); save(); this.closeModal(); this.render(); toast('Trattativa chiusa. Potrai riprovare più avanti.', 'info'); },
+
+  /* ---------- Consiglia a una squadra ---------- */
+  recModal(pid) {
+    const p = P(pid);
+    const teams = S.teams.filter(t => t.id !== p.team).map(t => ({ t, c: recChance(p, t.id), slot: draftSlot(t.id), rel: teamRel(t.id) }));
+    teams.sort((a, b) => b.c - a.c || a.slot - b.slot);
+    const done = p.lastRec === S.turn;
+    const intro = p.school
+      ? `Consiglia ${esc(p.name)} a una squadra: se ti ascoltano, lo sceglieranno al Draft se è ancora libero al loro turno, e sale nelle classifiche. Oggi è proiettato alla <b>#${draftProjection(p)}</b>.`
+      : p.team == null ? `Consiglia ${esc(p.name)} a una squadra: se ti ascoltano, gli fanno un'offerta.`
+        : `Proponi ${esc(p.name)} a un'altra squadra: se ti ascoltano, organizzano uno scambio.`;
+    this.openModal(`<h3>📣 Consiglia ${esc(p.name)}</h3><p class="small">${intro}</p>
+      <p class="small muted">Più è buono il tuo rapporto con la squadra, più ti danno retta. Se non ti ascoltano, il rapporto cala un po'. Una volta a settimana per giocatore.</p>
+      ${done ? '<p class="warn">Ne hai già parlato con una squadra questa settimana.</p>' : ''}
+      <div class="rec-list">${teams.map(({ t, c, slot, rel }) => `<div class="rec">
+        <span class="rec-t"><b>${esc(teamName(t))}</b><small>${p.school ? `scelta #${slot} · ` : ''}rapporto ${relLabel(rel)}</small></span>
+        <span class="rec-c ${c > .6 ? 'good' : c > .3 ? 'warn' : 'bad'}">${Math.round(c * 100)}%</span>
+        <button class="btn sm primary" onclick="UI.doRecommend(${pid}, ${t.id})" ${done ? 'disabled' : ''}>Consiglia</button></div>`).join('')}</div>`);
+  },
+  doRecommend(pid, tid) { const r = recommend(pid, tid); save(); this.closeModal(); this.render(); toast(r.msg, r.type, r.type === 'good' ? 'Ti hanno ascoltato!' : undefined); },
 
   /* ---------- Trattative ---------- */
   negotiation(pid, selId = null, msg = '') {
@@ -1455,8 +1704,10 @@ const UI = {
       </dl>
       <div class="actions">
         ${mine ? `<button class="btn sm" onclick="UI.doContact(${p.id});UI.player(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>📞 Contatta</button>
+          <button class="btn sm" onclick="UI.recModal(${p.id})">📣 Consiglia a una squadra</button>
           <button class="btn bad sm" onclick="UI.release(${p.id})">Interrompi rapporto</button>`
-          : `<button class="btn primary sm" onclick="UI.pitchModal(${p.id})">Proponi agenzia</button>
+          : `<button class="btn primary sm" onclick="UI.pitchModal(${p.id})">${S.talks[p.id] ? 'Riprendi la trattativa' : 'Proponi agenzia'}</button>
+          ${p.school ? `<button class="btn sm" onclick="UI.recModal(${p.id})">📣 Consiglia a una squadra</button>` : ''}
           ${!ex && p.school ? `<button class="btn sm" onclick="UI.doScout(${p.id});UI.player(${p.id})">🔭 Osserva</button>` : ''}`}
       </div>`);
   },
@@ -1610,6 +1861,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();

@@ -359,3 +359,79 @@ svg.avatar { display: block; flex: none; }
   .filters .seg button { padding: 8px 4px; font-size: 13px; }
   .filters select, .filters input { flex: 1 1 140px; min-width: 0; }
 }
+
+/* ---------- v5: giocatori in Home, voti partita, risultati, trattative, consigli ---------- */
+.pls { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.pl { display: flex; gap: 11px; align-items: center; width: 100%; text-align: left; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 11px 12px; }
+.pl:hover { border-color: var(--accent); }
+.pl.add { justify-content: center; border-style: dashed; color: var(--muted); padding: 16px; }
+.pl-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pl-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.pl-name b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-name .ov { flex: none; font-weight: 800; font-size: 11.5px; border: 1.5px solid var(--line); border-radius: 7px; padding: 0 5px; }
+.pl-name .ov.t1 { border-color: var(--gold); color: var(--gold); } .pl-name .ov.t2 { border-color: var(--accent); color: var(--accent2); } .pl-name .ov.t3 { border-color: var(--blue); color: var(--blue); }
+.pl-sub { font-size: 12px; color: var(--muted); }
+.pl-meta { font-size: 12.5px; color: #c9d1d9; }
+.pl-stats { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+.pl-stats span { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px 7px; font-size: 10px; color: var(--muted);
+  letter-spacing: .4px; display: flex; align-items: baseline; gap: 4px; }
+.pl-stats b { font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.pl-last { flex: none; display: grid; justify-items: center; gap: 2px; }
+.pl-last small { font-size: 10px; color: var(--muted); }
+
+/* Voti da pagella in stile arcade */
+.grade { font-family: var(--arcade); font-size: 17px; line-height: 1; min-width: 40px; text-align: center; padding: 7px 6px 5px;
+  border-radius: 6px; border: 2px solid #000; box-shadow: 3px 3px 0 #000; color: #111; display: inline-block; }
+.grade.big { font-size: 22px; min-width: 52px; padding: 9px 6px 7px; }
+.grade.ga { background: #39ff88; } .grade.gb { background: #4cc9f0; } .grade.gc { background: #ffd23f; } .grade.gd { background: #ff4d6d; color: #fff; }
+
+/* Schermata risultati della settimana */
+#weekres { position: fixed; inset: 0; z-index: 35; background: rgba(5,8,12,.78); display: flex; align-items: center; justify-content: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); }
+.wr-panel { width: 100%; max-width: 480px; max-height: 100%; overflow-y: auto; display: grid; gap: 10px; padding: 16px 14px 14px;
+  background: #170d2b repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 2px, transparent 2px 4px);
+  border: 3px solid #4cc9f0; border-radius: 6px; box-shadow: 0 0 0 3px #000, 8px 8px 0 3px #000, 0 0 30px rgba(76,201,240,.35);
+  animation: arcPopC .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+@keyframes arcPopC { 0% { transform: scale(.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+.wr-title { font-family: var(--arcade); font-size: 20px; color: #4cc9f0; text-shadow: 3px 3px 0 #000; text-transform: uppercase; text-align: center; letter-spacing: 1px; }
+.wr-top { background: linear-gradient(90deg, #ff7a1a33, transparent); border: 2px solid #ff7a1a; border-radius: 6px; padding: 8px 10px; font-size: 13.5px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; animation: topGlow 1.2s ease-in-out 3; }
+@keyframes topGlow { 50% { box-shadow: 0 0 18px #ff7a1a; } }
+.wr-list { display: grid; gap: 7px; }
+.wr-row { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.35); border: 1px solid #2c2347; border-radius: 8px; padding: 8px 10px; }
+.wr-row.top { border-color: #39ff88; }
+.wr-info { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.wr-info b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wr-info span { font-size: 12px; color: #b9b2d6; }
+.wr-info .wr-line { font-size: 14px; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wr-go { font-family: var(--arcade); font-weight: 400; letter-spacing: 1px; text-transform: uppercase; justify-self: center; padding: 10px 22px; box-shadow: 0 4px 0 #a34800; }
+
+/* Trattativa per diventare suo agente */
+.tk-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+.tk-head h3 { margin: 0 0 2px; }
+.tk-head p { margin: 0; }
+.tk-odds { display: flex; justify-content: space-between; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.tk-odds b { font-family: var(--arcade); font-weight: 400; font-size: 24px; }
+.tk-pat { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+.tk-pat .hearts { font-size: 18px; letter-spacing: 2px; }
+.tk-pat .off { filter: grayscale(1); opacity: .25; }
+.tk-ask { background: #1e1530; border: 1px solid #45306b; border-radius: 12px; padding: 10px 12px; margin-top: 8px; display: grid; }
+.tk-ask small { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; }
+.tk-ask b { font-size: 16px; }
+.tk-log { list-style: none; padding: 0; margin: 10px 0 4px; display: grid; gap: 4px; font-size: 13px; color: #c9d1d9; }
+.tk-log li { background: rgba(255,255,255,.03); border-radius: 8px; padding: 5px 9px; }
+
+/* Consigli alle squadre */
+.rec-list { display: grid; gap: 6px; margin-top: 8px; }
+.rec { display: flex; align-items: center; gap: 10px; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.rec-t { flex: 1; min-width: 0; display: grid; }
+.rec-t b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-t small { color: var(--muted); font-size: 12px; }
+.rec-c { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Imprevisto raro */
+.ev.rare { border: 2px solid var(--gold); background: linear-gradient(135deg, #3a2c05, var(--panel) 65%); }
+.rare-tag { font-family: var(--arcade); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: #1a1300; background: var(--gold);
+  display: inline-block; padding: 4px 9px 3px; border-radius: 4px; border: 2px solid #000; box-shadow: 3px 3px 0 #000; margin-bottom: 10px; }
+@media (prefers-reduced-motion: reduce) { .wr-panel, .wr-top { animation: none; } }
