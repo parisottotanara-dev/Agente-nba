@@ -1,6 +1,11 @@
 # 🏀 Super Agente NBA
 
-Gioco manageriale: sei un **procuratore sportivo** nel basket americano. Squadre e giocatori sono inventati.
+Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, star, sponsor e personaggi famosi hanno nomi storpiati (LeBonno James, Los Angeles Fakers, Naik…); gli altri giocatori sono inventati.
+
+## Novità
+- **Tutorial** con Coach Gigi alla prima partita (rivedibile col pulsante ?).
+- **110 imprevisti** (`events.js`): quasi ogni settimana una scelta da fare; alcuni cambiano l'aspetto del giocatore (tatuaggi, capelli, occhiali...).
+- **Home illustrata**: il cliente più pagato schiaccia con la maglia, il numero e il look veri.
 
 ## Come si gioca
 Apri `index.html` nel browser, oppure pubblica il repository con GitHub Pages e su iPhone usa Safari → Condividi → **Aggiungi alla schermata Home**.

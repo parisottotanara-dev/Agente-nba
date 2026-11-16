@@ -5,7 +5,7 @@
 /* ================================================================== */
 /* Utilità                                                             */
 /* ================================================================== */
-const SAVE_KEY = 'superAgenteNBA.save.v1';
+const SAVE_KEY = 'superAgenteNBA.save.v2';
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = (a, b) => Math.floor(rand(a, b + 1));
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -37,21 +37,8 @@ const SPONSOR_CUT = 0.15; // percentuale dell'agente sugli sponsor
 const POS = ['PG', 'SG', 'SF', 'PF', 'C'];
 const POS_IT = { PG: 'Playmaker', SG: 'Guardia', SF: 'Ala piccola', PF: 'Ala grande', C: 'Centro' };
 
-const TEAMS = [
-  ['Atlanta', 'Fenici', 'ATL', .5], ['Boston', 'Corsari', 'BOS', .8], ['Brooklyn', 'Acciaio', 'BKN', .85],
-  ['Charlotte', 'Pionieri', 'CHA', .3], ['Chicago', 'Venti', 'CHI', .85], ['Cleveland', 'Fornaci', 'CLE', .3],
-  ['Dallas', 'Stelle', 'DAL', .7], ['Denver', 'Vette', 'DEN', .45], ['Detroit', 'Motori', 'DET', .4],
-  ['San Francisco', 'Nebbia', 'SFN', .85], ['Houston', 'Razzi', 'HOU', .7], ['Indianapolis', 'Piloti', 'IND', .25],
-  ['Los Angeles', 'Onde', 'LAO', 1], ['Hollywood', 'Divi', 'HOL', 1], ['Memphis', 'Blues', 'MEM', .2],
-  ['Miami', 'Squali', 'MIA', .75], ['Milwaukee', 'Lupi', 'MIL', .2], ['Minneapolis', 'Ghiacci', 'MIN', .3],
-  ['New Orleans', 'Alligatori', 'NOL', .25], ['New York', 'Grattacieli', 'NYG', 1], ['Oklahoma City', 'Tornado', 'OKC', .2],
-  ['Orlando', 'Comete', 'ORL', .35], ['Philadelphia', 'Campane', 'PHI', .7], ['Phoenix', 'Scorpioni', 'PHX', .5],
-  ['Portland', 'Pini', 'POR', .3], ['Sacramento', 'Cercatori', 'SAC', .25], ['San Antonio', 'Speroni', 'SAS', .3],
-  ['Toronto', 'Aurore', 'TOR', .6], ['Salt Lake', 'Canyon', 'SLC', .2], ['Washington', 'Senatori', 'WAS', .55],
-];
 const RIVALS = ['Apex Sports Group', 'Stellar Management', 'Prime Hoops Agency', 'Northline Talent'];
-const BRANDS = ['Volt Energy', 'Skyline Sneakers', 'Aurora Auto', 'Fizz Cola', 'PixelPhone', 'Nimbus Gaming',
-  'Ranch Burger', 'Orbit Watches', 'Tidal Sportswear', 'Bolt Assicurazioni', 'Kappa Cereali', 'Neon Headphones'];
+// TEAMS, BRANDS, CELEBS, STARS e VIP_PLAYERS sono in names.js; EVENTS in events.js; grafica in art.js
 const COLLEGES = ['Univ. Bluewater', 'State Tech', 'Riverside College', 'Northern Pines', 'Coastal Univ.',
   'Lakeshore', 'Desert State', 'Mountain View U.', 'Ironwood College', 'Real Madrid B (Spagna)',
   'Olimpia Juniores (Italia)', 'Partizan Youth (Serbia)', 'ASVEL Espoirs (Francia)', 'G-League Ignite', 'Liceo Oak Ridge'];
@@ -88,6 +75,7 @@ function newPlayer(kind) {
     injury: 0, sponsors: [], refusals: 0, lockedUntil: 0, lastPitch: -1, lastContact: -1,
     gp: 0, pts: 0, reb: 0, ast: 0, school: null, rookieSeason: null,
     career: { titles: 0, allstar: 0, mvp: 0, roy: 0, seasons: 0 },
+    num: pick(NUMBERS), look: genLook(),
   };
   return p;
 }
@@ -120,19 +108,31 @@ const shownValue = p => exact(p) ? marketValue(p) : marketValue({ ...p, ovr: sho
 
 function newGame(agencyName, agentName) {
   S = {
-    v: 1, agency: agencyName || 'Hoop Dreams Agency', agent: agentName || 'Agente',
+    v: 2, agency: agencyName || 'Hoop Dreams Agency', agent: agentName || 'Agente',
     cash: 300000, rep: 15, season: 2026, phase: 'fa', week: 1, turn: 0,
     staff: { scout: 0, legal: 0, marketing: 0, office: 0 },
-    teams: TEAMS.map((t, i) => ({ id: i, city: t[0], name: t[1], abbr: t[2], market: t[3], w: 0, l: 0 })),
+    teams: TEAMS.map((t, i) => ({ id: i, city: t[0], name: t[1], abbr: t[2], market: t[3], color: t[4], color2: t[5], w: 0, l: 0 })),
     players: {}, clients: [], offers: [], inbox: [], news: [], nextId: 1, nextEv: 1,
     goals: {}, debtWeeks: 0, history: [], lastChampion: null, over: false,
-    seasonIncome: 0, seasonExpense: 0,
+    seasonIncome: 0, seasonExpense: 0, recentEv: [], tutorialDone: false,
   };
-  // squadre
+  // squadre: prima le star (nomi parodia, nella loro squadra), poi giocatori inventati
   const slots = [84, 79, 76, 73, 71, 69, 67, 65, 63, 61, 59, 57, 55];
   for (const t of S.teams) {
     const boost = gauss() * 2.5;
-    for (const base of slots) {
+    const stars = STARS.filter(x => x[1] === t.abbr);
+    for (const [name, , pos, age, ovr, num] of stars) {
+      const p = newPlayer('pro');
+      Object.assign(p, { name, pos, age, ovr, num, team: t.id, star: true });
+      growPot(p);
+      p.salary = clamp(r1(marketValue(p) * rand(0.9, 1.1)), MIN_SAL, MAX_SAL);
+      p.years = randi(1, 4);
+      p.agency = pick(RIVALS);
+      p.hype = clamp(Math.round((ovr - 70) * 2.5), 10, 80);
+      p.career.seasons = Math.max(0, age - 20);
+      S.players[p.id] = p;
+    }
+    for (const base of slots.slice(stars.length)) {
       const p = newPlayer('pro');
       p.ovr = clamp(Math.round(base + boost + gauss() * 4), 45, 97);
       growPot(p);
@@ -153,6 +153,17 @@ function newGame(agencyName, agentName) {
     p.career.seasons = Math.max(0, p.age - 21);
     S.players[p.id] = p;
   }
+  // personaggi famosi che giocano: metà free agent, metà prospetti
+  const vips = shuffle([...VIP_PLAYERS]);
+  const kidName = vips.pop();
+  vips.forEach((name, i) => {
+    const p = newPlayer(i % 2 ? 'prospect' : 'pro');
+    p.name = name; p.vip = true; p.hype = 35;
+    if (i % 2) { p.ovr = randi(52, 66); p.pot = clamp(p.ovr + randi(8, 25), p.ovr + 3, 95); p.school = pick(COLLEGES); }
+    else { p.ovr = randi(58, 74); growPot(p); p.career.seasons = Math.max(0, p.age - 21); }
+    p.agency = chance(0.4) ? pick(RIVALS) : null;
+    S.players[p.id] = p;
+  });
   genDraftClass();
   // clienti iniziali
   const vet = newPlayer('pro');
@@ -160,7 +171,7 @@ function newGame(agencyName, agentName) {
   growPot(vet); vet.salary = r1(marketValue(vet)); vet.career.seasons = 4;
   S.players[vet.id] = vet; S.clients.push(vet.id);
   const kid = newPlayer('prospect');
-  Object.assign(kid, { age: 19, ovr: 56, pot: 78, comm: 3, morale: 80, school: pick(COLLEGES) });
+  Object.assign(kid, { name: kidName, vip: true, hype: 35, age: 19, ovr: 56, pot: 78, comm: 3, morale: 80, school: pick(COLLEGES) });
   S.players[kid.id] = kid; S.clients.push(kid.id);
 
   addNews(`🏢 Nasce <b>${esc(S.agency)}</b>! Primi clienti: ${esc(vet.name)} e il giovane ${esc(kid.name)}.`, 'gold');
@@ -192,9 +203,6 @@ function addNews(text, cls = '') {
   S.news.unshift({ when: `${seasonLabel()} · ${phaseLabel()}`, text, cls });
   if (S.news.length > 80) S.news.length = 80;
 }
-function addEvent(type, pid, text, data = {}) {
-  S.inbox.push({ id: S.nextEv++, type, pid, text, data });
-}
 function save() {
   if (!S) return;
   S.savedAt = Date.now();
@@ -217,7 +225,7 @@ const Cloud = {
       const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
       if (!db || !user) return;
       const id = await user.id();
-      this.doc = db.collection('data/users/' + id).doc('partita');
+      this.doc = db.collection('data/users/' + id).doc('partita2');
       const snap = await this.doc.get();
       const d = snap && snap.exists ? snap.data() : null;
       if (d && d.data && (!S || (d.savedAt || 0) > (S.savedAt || 0))) {
@@ -500,48 +508,6 @@ function sponsorValue(p) {
   const base = Math.pow(clamp((p.ovr - 60) / 33, 0.03, 1.2), 2) * 5;
   return r1(Math.max(0.1, base * (0.7 + mkt * 0.6) * (1 + p.hype / 100) * (1 + S.staff.marketing * 0.08)));
 }
-function clientWeeklyEvents() {
-  for (const p of clients()) {
-    if (p.retired) continue;
-    if (S.inbox.some(e => e.pid === p.id)) continue;
-    const t = teamOf(p);
-    // infortunio
-    if (t && !p.injury && chance(0.03)) {
-      p.injury = randi(1, 8); p.morale = clamp(p.morale - 5, 0, 100);
-      if (p.injury >= 4) addEvent('injury', p.id, `🚑 ${p.name} si è infortunato: stop di circa ${p.injury} settimane.`);
-      else addNews(`🩹 ${esc(p.name)} out per ${p.injury} settiman${p.injury > 1 ? 'e' : 'a'} (lieve infortunio).`, 'warn');
-      continue;
-    }
-    // sponsor
-    if (p.ovr >= 64 && p.sponsors.length < 3 && chance(0.02 + p.hype / 2000)) {
-      const brand = pick(BRANDS.filter(b => !p.sponsors.some(s => s.brand === b)));
-      addEvent('sponsor', p.id, `💼 ${brand} vuole ${p.name} come testimonial.`,
-        { brand, value: sponsorValue(p), years: randi(1, 3) });
-      continue;
-    }
-    // prestazione super
-    if (t && !p.injury && p.ovr >= 70 && chance(0.03)) {
-      const pts = randi(36, 52);
-      p.hype = clamp(p.hype + 8, 0, 100); changeRep(0.4);
-      addNews(`🔥 ${esc(p.name)} esplode: <b>${pts} punti</b> contro i ${esc(pick(S.teams).name)}!`, 'good');
-      continue;
-    }
-    // scandalo
-    if (chance(0.012)) {
-      addEvent('scandal', p.id, `📰 ${p.name} è finito sui giornali per una serata movimentata in discoteca.`);
-      continue;
-    }
-    // richiesta di cessione
-    if (t && p.ovr >= 74 && winPct(t) < 0.38 && S.week > 5 && chance(0.03)) {
-      addEvent('trade', p.id, `😤 ${p.name} è stufo di perdere con i ${teamName(t)} e vuole andare via.`);
-      continue;
-    }
-    // agente rivale
-    if (p.morale < 30 && chance(0.3)) {
-      addEvent('poach', p.id, `🦈 ${pick(RIVALS)} sta corteggiando ${p.name}, che non è contento di te.`);
-    }
-  }
-}
 function moraleDrift() {
   for (const p of clients()) {
     let d = 0;
@@ -557,47 +523,145 @@ function moraleDrift() {
   }
 }
 
-function resolveEvent(evId, choice) {
-  const ev = S.inbox.find(e => e.id === evId); if (!ev) return;
-  const p = P(ev.pid);
-  let msg = '';
-  switch (ev.type) {
-    case 'sponsor': {
-      const d = ev.data;
-      if (choice === 'yes') { p.sponsors.push({ brand: d.brand, value: d.value, years: d.years }); msg = `Contratto firmato: ${fmtM(d.value)}/anno (tua quota ${fmt$(d.value * 1e6 * SPONSOR_CUT)}/anno).`; checkGoal('sponsor', true); }
-      else if (choice === 'raise') {
-        if (chance(0.55)) { const v = r1(d.value * 1.25); p.sponsors.push({ brand: d.brand, value: v, years: d.years }); msg = `Rilancio accettato! ${fmtM(v)}/anno.`; changeRep(0.5); }
-        else msg = `${d.brand} si è tirata indietro.`;
-      } else msg = 'Offerta rifiutata.';
-      break;
+/* Imprevisti: ogni settimana ne arriva quasi sempre uno (a volte due), scelto tra quelli di events.js. */
+function condOk(e, p) {
+  const c = e.cond || {}, t = p ? teamOf(p) : null;
+  if (!p) return !!e.any;
+  if (e.any) return false;
+  if (c.team && !t) return false;
+  if (c.healthy && p.injury) return false;
+  if (c.inj && !p.injury) return false;
+  if (c.ovr && p.ovr < c.ovr) return false;
+  if (c.star && p.ovr < 80) return false;
+  if (c.young && p.age > 23) return false;
+  if (c.vet && p.age < 31) return false;
+  if (c.losing && (!t || t.w + t.l < 8 || winPct(t) >= 0.4)) return false;
+  if (c.winning && (!t || t.w + t.l < 8 || winPct(t) <= 0.6)) return false;
+  if (c.lowMor && p.morale >= 40) return false;
+  if (c.sponsor && !p.sponsors.length) return false;
+  const fxs = e.choices.map(ch => ch.fx);
+  const has = k => fxs.some(f => f[k] || (f.odds && (f.odds[1][k] || f.odds[2][k])));
+  if (has('sponsor') && (p.ovr < 60 || p.sponsors.length >= 4)) return false;
+  return true;
+}
+function fillText(t, d) {
+  return t.replace(/\{P\}/g, d.p || '').replace(/\{P1\}/g, (d.p || '').split(' ').pop()).replace(/\{T\}/g, d.t || '')
+    .replace(/\{C\}/g, d.c).replace(/\{B\}/g, d.b).replace(/\{R\}/g, d.r).replace(/\{N\}/g, d.n)
+    .replace(/\{age\}/g, d.age ?? '').replace(/\{num\}/g, d.num ?? '');
+}
+function createEvent(e, p) {
+  const others = Object.values(S.players).filter(x => x.team != null && !isClient(x) && x.ovr >= 80);
+  const d = {
+    p: p ? p.name : '', t: p && teamOf(p) ? teamName(teamOf(p)) : '', c: pick(CELEBS), r: pick(RIVALS),
+    n: others.length ? pick(others).name : 'un avversario', age: p ? p.age : '', num: p ? p.num : '',
+    b: pick(BRANDS.filter(b => !p || !p.sponsors.some(s => s.brand === b))),
+  };
+  if (e.cond && e.cond.sponsor && p) d.b = pick(p.sponsors).brand;
+  if (p) { d.value = sponsorValue(p); d.years = randi(1, 3); }
+  S.inbox.push({ id: S.nextEv++, ev: e.id, pid: p ? p.id : null, ico: e.ico, title: fillText(e.title, d), text: fillText(e.text, d), data: d });
+  S.recentEv.push(e.id);
+  if (S.recentEv.length > 45) S.recentEv.shift();
+}
+function genWeeklyEvents() {
+  const base = S.phase === 'reg' || S.phase === 'fa' ? 0.9 : 0.5;
+  const n = (chance(base) ? 1 : 0) + (chance(base * 0.3) ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    const free = clients().filter(p => !p.retired && !S.inbox.some(x => x.pid === p.id));
+    let p = null, pool = [];
+    for (let tries = 0; tries < 6 && !pool.length; tries++) {
+      p = free.length && !chance(0.1) ? pick(free) : null;
+      // un cliente scontento attira quasi sempre un'agenzia rivale
+      if (p && p.morale < 40 && chance(0.5)) pool = EVENTS.filter(e => e.id === 'rivale');
+      else pool = EVENTS.filter(e => condOk(e, p) && !S.recentEv.includes(e.id));
     }
-    case 'injury':
-      if (choice === 'clinic') { if (S.cash < 25000) return toast('Fondi insufficienti.'); spend(25000); p.injury = Math.max(1, Math.ceil(p.injury / 2)); p.morale = clamp(p.morale + 8, 0, 100); msg = 'Riabilitazione accelerata in clinica privata.'; }
-      else msg = 'Seguirà il normale percorso di recupero.';
-      break;
-    case 'scandal':
-      if (choice === 'pr') { if (S.cash < 15000) return toast('Fondi insufficienti.'); spend(15000); changeRep(-0.5); msg = 'Il comunicato ha calmato le acque.'; }
-      else { changeRep(-2.5); p.hype = clamp(p.hype - 10, 0, 100); p.sponsors = p.sponsors.filter(() => chance(0.7)); msg = 'La storia è esplosa sui social. Qualche sponsor è scappato.'; }
-      break;
-    case 'trade':
-      if (choice === 'push') {
-        if (chance(0.6)) { const to = tradePlayer(p, true); p.morale = clamp(p.morale + 15, 0, 100); msg = `Scambio fatto: ora gioca per i ${teamName(to)}!`; }
-        else { p.morale = clamp(p.morale - 10, 0, 100); changeRep(-1); msg = 'La squadra non lo cede e la stampa ti critica.'; }
-      } else { p.morale = clamp(p.morale - 8, 0, 100); msg = 'Resta, ma non è felice.'; }
-      break;
-    case 'poach':
-      if (choice === 'comm') { p.comm = Math.max(1, p.comm - 1); p.morale = clamp(p.morale + 25, 0, 100); msg = `Commissione scesa al ${p.comm}%. Resta con te.`; }
-      else if (choice === 'dinner') {
-        if (S.cash < 20000) return toast('Fondi insufficienti.');
-        spend(20000);
-        if (chance(0.6)) { p.morale = clamp(p.morale + 20, 0, 100); msg = 'Cena perfetta: resta con te.'; }
-        else { lose(p); msg = `${p.name} se ne va comunque.`; }
-      } else { lose(p); msg = `${p.name} passa a un'altra agenzia.`; }
-      break;
+    if (pool.length) createEvent(pick(pool), p);
   }
-  S.inbox = S.inbox.filter(e => e.id !== evId);
-  if (msg) addNews(`${esc(p.name)}: ${esc(msg)}`);
-  save(); UI.render(); toast(msg);
+}
+
+const LOOK_TXT = {
+  tattoo: v => v === 'face' ? 'tatuaggio sul viso' : 'tatuaggio sul braccio', hairColor: () => 'capelli colorati',
+  hair: v => ({ mohawk: 'cresta', short: 'capelli corti', bald: 'testa rasata', braids: 'treccine' })[v],
+  beard: v => v === 'long' ? 'barbone' : v === 'mustache' ? 'baffi' : 'barba', glasses: v => v === 'sun' ? 'occhiali da sole' : 'occhialoni',
+  mask: () => 'maschera protettiva', headband: () => 'fascia in testa', number: v => 'maglia numero ' + v,
+  chain: () => 'catena d\'oro', tooth: () => 'dente scheggiato',
+};
+// Testo breve degli effetti di una scelta, mostrato sotto il pulsante e nel risultato.
+function fxText(f, inst) {
+  const o = [];
+  if (f.cash) o.push(`${f.cash > 0 ? '+' : '−'}$${Math.abs(f.cash)}k`);
+  if (f.rep) o.push(`reputazione ${f.rep > 0 ? '+' : ''}${f.rep}`);
+  if (f.mor) o.push(`morale ${f.mor > 0 ? '+' : ''}${f.mor}${f.all ? ' a tutti i clienti' : ''}`);
+  if (f.hype) o.push(`popolarità ${f.hype > 0 ? '+' : ''}${f.hype}`);
+  if (f.ovr) o.push(`valutazione ${f.ovr > 0 ? '+' : ''}${f.ovr}`);
+  if (f.inj) o.push(`fermo ${f.inj} sett.`);
+  if (f.comm) o.push(`commissione ${f.comm > 0 ? '+' : ''}${f.comm}%`);
+  if (f.leave) o.push('lascia l\'agenzia');
+  if (f.trade) o.push('ceduto a una big');
+  if (f.sponsor && inst && inst.data.value) {
+    const v = r1(inst.data.value * f.sponsor);
+    o.push(`sponsor ${fmtM(v)}/anno (tua quota ${fmt$(v * 1e6 * SPONSOR_CUT)})`);
+  }
+  if (f.sponsorCut) o.push('sponsor ridotto del 30%');
+  if (f.dropSponsor) o.push('perde lo sponsor');
+  if (f.gem) o.push('scopri un talento nascosto');
+  if (f.look) o.push('👤 ' + Object.entries(f.look).map(([k, v]) => LOOK_TXT[k](v)).join(', '));
+  if (f.odds) o.push(`${Math.round(f.odds[0] * 100)}%: ${fxText(f.odds[1], inst) || 'niente'} · altrimenti: ${fxText(f.odds[2], inst) || 'niente'}`);
+  return o.join(' · ');
+}
+function applyFx(f, inst, p) {
+  if (f.cash) f.cash > 0 ? earn(f.cash * 1000) : spend(-f.cash * 1000);
+  if (f.rep) changeRep(f.rep);
+  const targets = f.all ? clients() : p ? [p] : [];
+  for (const x of targets) if (f.mor) x.morale = clamp(Math.round(x.morale + f.mor), 0, 100);
+  if (!p) { if (f.gem) findGem(); return; }
+  if (f.hype) p.hype = clamp(p.hype + f.hype, 0, 100);
+  if (f.ovr) { p.ovr = clamp(p.ovr + f.ovr, 35, 99); p.pot = Math.max(p.pot, p.ovr); }
+  if (f.inj) p.injury = Math.max(p.injury, f.inj);
+  if (f.comm) p.comm = clamp(p.comm + f.comm, 1, 4);
+  if (f.look) { p.look = { ...(p.look || {}), ...f.look }; if (f.look.number != null) p.num = f.look.number; }
+  if (f.sponsor && inst.data.value) {
+    if (p.sponsors.length >= 4) p.sponsors.sort((a, b) => a.value - b.value).shift();
+    p.sponsors.push({ brand: inst.data.b, value: r1(inst.data.value * f.sponsor), years: inst.data.years });
+    checkGoal('sponsor', true);
+  }
+  if (f.sponsorCut) { const s = p.sponsors.find(x => x.brand === inst.data.b) || p.sponsors[0]; if (s) s.value = r1(s.value * 0.7); }
+  if (f.dropSponsor && p.sponsors.length) {
+    const i = Math.max(0, p.sponsors.findIndex(x => x.brand === inst.data.b));
+    p.sponsors.splice(i, 1);
+  }
+  if (f.trade && p.team != null) { const to = tradePlayer(p, true); addNews(`🔁 ${esc(p.name)} passa ai ${esc(teamName(to))}.`); }
+  if (f.gem) findGem();
+  if (f.leave && isClient(p)) lose(p);
+}
+function findGem() {
+  const g = newPlayer('prospect');
+  Object.assign(g, { age: randi(17, 19), ovr: randi(56, 63), school: 'Liceo di Akron (Ohio)', scouted: true, agency: null });
+  g.pot = randi(86, 96);
+  S.players[g.id] = g;
+  addNews(`🔭 Il tuo scout ha trovato <b>${esc(g.name)}</b>, talento del liceo con potenziale ~${g.pot}. Lo trovi nel Mercato, tra i prospetti.`, 'good');
+}
+function resolveEvent(instId, idx) {
+  const inst = S.inbox.find(e => e.id === instId); if (!inst) return;
+  const e = EVENTS.find(x => x.id === inst.ev), ch = e && e.choices[idx];
+  if (!ch) { S.inbox = S.inbox.filter(x => x.id !== instId); UI.render(); return; }
+  const p = inst.pid != null ? P(inst.pid) : null;
+  const cost = Math.max(0, -(ch.fx.cash || 0)) * 1000;
+  if (cost && S.cash < cost) return toast(`Servono ${fmt$(cost)}: non hai abbastanza contanti.`);
+  const f = { ...ch.fx };
+  let out;
+  if (f.odds) {
+    const [pr, win, bad] = f.odds; delete f.odds;
+    const ok = chance(pr), res = ok ? win : bad;
+    applyFx(f, inst, p); applyFx(res, inst, p);
+    out = (ok ? '✅ È andata bene! ' : '❌ Non è andata come speravi. ') + [fxText(f, inst), fxText(res, inst)].filter(Boolean).join(' · ');
+  } else { applyFx(f, inst, p); out = fxText(f, inst) || 'Fatto.'; }
+  if (ch.risk && p && chance(ch.risk.p)) {
+    applyFx(ch.risk.fx, inst, p);
+    out += ` · ⚠️ ${ch.risk.note.replace(/^./, c => c.toUpperCase())}: ${fxText(ch.risk.fx, inst)}`;
+  }
+  S.inbox = S.inbox.filter(x => x.id !== instId);
+  addNews(`${inst.ico} <b>${esc(inst.title)}</b> → ${esc(ch.label)}. ${esc(out)}`);
+  save(); UI.render(); toast(`${ch.label}: ${out}`);
 }
 function lose(p) {
   S.clients = S.clients.filter(id => id !== p.id);
@@ -623,7 +687,7 @@ function tradePlayer(p, toContender) {
 /* ================================================================== */
 function advance() {
   if (S.over) return;
-  if (S.inbox.length) { toast('Prima prendi le decisioni in sospeso (scheda Agenzia).'); UI.tab = 'home'; UI.render(); return; }
+  if (S.inbox.length) { toast('Prima scegli cosa fare con gli imprevisti della settimana (Home).'); UI.tab = 'home'; UI.render(); return; }
   S.turn++;
   spend(weeklyCost());
   S.rep = r1(S.rep * 0.997); // la fama va mantenuta
@@ -647,7 +711,6 @@ function advance() {
       if (p.injury) p.injury--;
       p.hype = Math.max(0, p.hype * 0.98 + (p.team != null && p.gp ? (avg(p, 'pts') - 12) * 0.05 : 0));
     }
-    clientWeeklyEvents();
     moraleDrift();
     aiFreeAgency(0.04);
     // offerte a stagione in corso per i clienti senza squadra
@@ -668,6 +731,8 @@ function advance() {
     S.phase = 'fa'; S.week = 1;
     makeOffersForClientFAs();
   }
+
+  if (!S.over) genWeeklyEvents();
 
   // bancarotta
   if (S.cash < 0) {
@@ -889,15 +954,14 @@ const UI = {
       <header class="top">
         <div class="top-row">
           <div class="brand">🏀 <span>${esc(S.agency)}</span></div>
-          <div class="stat"><small>Cassa</small><b class="${S.cash < 0 ? 'bad' : ''}">${fmt$(S.cash)}</b></div>
-          <div class="stat"><small>Reputazione</small><b>${S.rep.toFixed(1)}</b></div>
-          <div class="stat"><small>${seasonLabel()}</small><b>${phaseLabel()}</b></div>
           <div class="spacer"></div>
-          <button class="btn primary big" onclick="advance()" ${S.over ? 'disabled' : ''}>${advLabel}</button>
+          <div class="cash-pill ${S.cash < 0 ? 'bad' : ''}" id="t-cash2">💰 ${fmt$(S.cash)}</div>
+          <button class="btn help" id="t-help" onclick="Tutorial.start()" aria-label="Rivedi il tutorial">?</button>
+          <button class="btn primary big" id="t-adv" onclick="advance()" ${S.over ? 'disabled' : ''}>${advLabel}</button>
         </div>
         <nav class="tabs">
-          ${[['home', 'Agenzia', inbox], ['clients', 'Clienti', nOffers], ['market', 'Mercato', 0], ['league', 'Lega', 0], ['staff', 'Staff', 0]]
-            .map(([k, l, b]) => `<button class="${this.tab === k ? 'on' : ''}" onclick="UI.go('${k}')">${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}
+          ${[['home', '🏠 Home', inbox], ['clients', '⭐ Clienti', nOffers], ['market', '🔎 Mercato', 0], ['league', '🏆 Lega', 0], ['staff', '🏢 Staff', 0]]
+            .map(([k, l, b]) => `<button id="tab-${k}" class="${this.tab === k ? 'on' : ''}" onclick="UI.go('${k}')">${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}
         </nav>
       </header>
       <main>${this['v_' + this.tab]()}</main>`;
@@ -907,74 +971,98 @@ const UI = {
   startScreen() {
     const has = hasLocalSave();
     return `<div class="start">
-      <div class="ball">🏀</div>
+      <div class="start-hero">${heroSVG(null)}</div>
       <h1>Super <span>Agente</span> NBA</h1>
       <p>Costruisci l'agenzia di procuratori più potente del basket americano.</p>
       <form onsubmit="event.preventDefault(); UI.start(this)">
-        <label>Il tuo nome<input name="agent" maxlength="30" placeholder="Es. Marco Rossi" required></label>
-        <label>Nome dell'agenzia<input name="agency" maxlength="34" placeholder="Es. Hoop Dreams Agency" required></label>
+        <label>Il tuo nome<input id="f-agent" name="agent" maxlength="30" placeholder="Es. Marco Rossi" required></label>
+        <label>Nome dell'agenzia<input id="f-agency" name="agency" maxlength="34" placeholder="Es. Hoop Dreams Agency" required></label>
         <button class="btn primary big">Fonda l'agenzia</button>
       </form>
       <ul class="rules">
         <li>🔭 <b>Scova talenti</b> tra i prospetti del college e i free agent, poi convincili a firmare con te.</li>
         <li>🤝 <b>Negozia i contratti</b> con le squadre: chiedi troppo e il GM si alza dal tavolo.</li>
-        <li>💼 <b>Procura sponsor</b>, gestisci infortuni, scandali e agenti rivali.</li>
+        <li>🎬 <b>Ogni settimana un imprevisto</b>: videoclip, tatuaggi, sponsor, litigi col coach…</li>
         <li>💰 Guadagni una <b>commissione</b> su stipendi (1-4%) e sponsor (15%). Se resti in rosso 4 settimane, perdi la licenza.</li>
       </ul>
       ${has ? '<p class="small">C\'è una partita salvata: verrà sovrascritta.</p>' : ''}
-      <p class="small muted">Squadre e giocatori sono inventati.</p>
+      <p class="small muted">Squadre, giocatori, sponsor e personaggi famosi sono parodie con nomi storpiati.</p>
     </div>`;
   },
-  start(f) { newGame(f.agency.value.trim(), f.agent.value.trim()); this.tab = 'home'; this.render(); },
+  start(f) { newGame(f.agency.value.trim(), f.agent.value.trim()); this.tab = 'home'; this.render(); window.scrollTo(0, 0); setTimeout(() => Tutorial.start(), 400); },
 
-  /* ---------- Agenzia ---------- */
+  /* ---------- Home ---------- */
+  heroPlayer() {
+    const cl = clients().filter(p => !p.retired);
+    return cl.filter(p => p.team != null).sort((a, b) => b.salary - a.salary)[0] || cl.sort((a, b) => b.ovr - a.ovr)[0] || null;
+  },
   v_home() {
     const cl = clients();
-    const totSal = cl.reduce((s, p) => s + (p.team != null ? p.salary : 0), 0);
+    const hp = this.heroPlayer();
+    const stars = Math.round(S.rep / 20);
     const ranking = this.agencyRanking();
     const myPos = ranking.findIndex(r => r.mine) + 1;
     const net = weeklyIncomeEstimate() - weeklyCost();
+    const hpT = hp && teamOf(hp);
+    const feed = S.news.slice(0, 12).map(n => {
+      const m = n.text.match(/^(\p{Extended_Pictographic}️?)\s*/u);
+      return `<div class="item ${n.cls}"><i>${m ? m[1] : '🏀'}</i><div>${m ? n.text.slice(m[0].length) : n.text}<small>${esc(n.when)}</small></div></div>`;
+    }).join('');
     return `
-      <div class="kpis">
-        <div class="card kpi"><small>Clienti</small><b>${cl.length} / ${capacity()}</b></div>
-        <div class="card kpi"><small>Stipendi gestiti</small><b>${fmtM(totSal)}</b></div>
-        <div class="card kpi"><small>Saldo medio a settimana</small><b class="${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : ''}${fmt$(net)}</b></div>
-        <div class="card kpi"><small>Classifica agenzie</small><b>${myPos}° su ${ranking.length}</b></div>
+      <div class="hero">
+        ${heroSVG(hp)}
+        <div class="hero-txt"><h1>${esc(S.agency)}</h1><p>${seasonLabel()} · ${phaseLabel()}</p></div>
+        ${hp ? `<button class="hero-tag" onclick="UI.player(${hp.id})">⭐ ${esc(hp.name)} · #${hp.num}${hpT ? ` · ${esc(hpT.name)}` : ''}${hp.team != null ? ` · ${fmtM(hp.salary)}` : ''}</button>` : ''}
       </div>
-      ${S.inbox.length ? `<h2>📥 Decisioni in sospeso (${S.inbox.length})</h2><div class="grid">${S.inbox.map(e => this.eventCard(e)).join('')}</div>` : ''}
-      ${S.offers.length ? `<h2>📨 Trattative aperte</h2><div class="grid">${[...new Set(S.offers.map(o => o.pid))].map(pid => {
+      <div class="chips">
+        <div class="chip" id="t-cash"><small>💰 Cassa</small><b class="${S.cash < 0 ? 'bad' : ''}">${fmt$(S.cash)}</b><span class="${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : ''}${fmt$(net)}/sett.</span></div>
+        <div class="chip" id="t-rep"><small>Reputazione</small><b>${S.rep.toFixed(0)}</b><span class="stars">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</span></div>
+        <div class="chip" id="t-cl"><small>👥 Clienti</small><b>${cl.length} / ${capacity()}</b><span class="muted">${myPos}ª agenzia</span></div>
+      </div>
+
+      <div id="t-ev">
+      <div class="sec"><h2>📣 Questa settimana</h2>${S.inbox.length ? `<span class="muted small">${S.inbox.length} da decidere</span>` : ''}</div>
+      ${S.inbox.length ? `<div class="evs">${S.inbox.map(e => this.eventCard(e)).join('')}</div>`
+        : `<div class="ev calm"><div class="ev-top"><div class="ev-ico">😌</div><div><h3>Settimana tranquilla</h3><p>Nessun imprevisto da gestire. Premi <b>${{ fa: 'Avanza settimana', reg: 'Gioca settimana', po: 'Gioca i playoff', draft: 'Vai al Draft' }[S.phase]}</b> per andare avanti.</p></div></div></div>`}
+      </div>
+
+      ${S.offers.length ? `<div class="sec"><h2>📨 Trattative aperte</h2></div><div class="feed">${[...new Set(S.offers.map(o => o.pid))].map(pid => {
         const p = P(pid), n = S.offers.filter(o => o.pid === pid).length;
-        return `<div class="card"><b>${esc(p.name)}</b> — ${n} offert${n > 1 ? 'e' : 'a'}${S.offers.some(o => o.pid === pid && o.ext) ? ' (rinnovo)' : ''}
-          <div class="actions"><button class="btn primary sm" onclick="UI.negotiation(${pid})">Negozia</button></div></div>`;
+        return `<button class="item deal" onclick="UI.negotiation(${pid})">${avatarSVG(p, 40)}<div><b>${esc(p.name)}</b><small>${n} offert${n > 1 ? 'e' : 'a'}${S.offers.some(o => o.pid === pid && o.ext) ? ' · rinnovo' : ''}</small></div><span class="go">Negozia ›</span></button>`;
       }).join('')}</div>` : ''}
-      <h2>📰 Notizie</h2>
-      <div class="card"><ul class="news">${S.news.slice(0, 30).map(n => `<li class="${n.cls}"><span class="when">${esc(n.when)}</span>${n.text}</li>`).join('')}</ul></div>
-      <h2>🏅 Obiettivi</h2>
-      <div class="card">${GOALS.map(([k, l]) => `<div class="goal ${S.goals[k] ? 'done' : ''}">${S.goals[k] ? '✅' : '⬜'} ${esc(l)} ${S.goals[k] ? `<span class="muted small">(${S.goals[k]})</span>` : ''}</div>`).join('')}</div>
-      ${S.history.length ? `<h2>📊 Storico stagioni</h2><div class="tbl-wrap"><table><tr><th>Stagione</th><th class="num">Entrate</th><th class="num">Spese</th><th class="num">Clienti</th><th class="num">Reputazione</th></tr>
+
+      <div class="sec"><h2>⭐ I tuoi campioni</h2><a href="#" onclick="UI.go('clients');return false">Vedi tutti</a></div>
+      <div class="cards">
+        ${cl.sort((a, b) => b.ovr - a.ovr).map(p => {
+          const t = teamOf(p);
+          return `<button class="fig" onclick="UI.player(${p.id})"><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span>${avatarSVG(p, 64)}
+            <b>${esc(p.name)}</b><span>${p.pos} · ${t ? esc(t.name) : p.school ? 'prospetto Draft' : 'free agent'}</span>
+            ${p.injury ? '<span class="tag inj">infortunato</span>' : ''}</button>`;
+        }).join('')}
+        ${cl.length < capacity() ? `<button class="fig add" onclick="UI.go('market')"><div class="plus">＋</div><span>Trova un nuovo cliente</span></button>` : ''}
+      </div>
+
+      <div class="sec"><h2>📰 Dalla lega</h2></div>
+      <div class="feed">${feed}</div>
+
+      <div class="sec"><h2>🏅 Obiettivi</h2><span class="muted small">${Object.keys(S.goals).length}/${GOALS.length}</span></div>
+      <div class="goals">${GOALS.map(([k, l]) => `<div class="goal ${S.goals[k] ? 'done' : ''}">${S.goals[k] ? '✅' : '⬜'} ${esc(l)}</div>`).join('')}</div>
+
+      ${S.history.length ? `<div class="sec"><h2>📊 Storico stagioni</h2></div><div class="tbl-wrap"><table><tr><th>Stagione</th><th class="num">Entrate</th><th class="num">Spese</th><th class="num">Clienti</th><th class="num">Reputazione</th></tr>
         ${S.history.map(h => `<tr><td>${h.season}</td><td class="num good">${fmt$(h.income)}</td><td class="num bad">${fmt$(h.expense)}</td><td class="num">${h.clients}</td><td class="num">${h.rep.toFixed(1)}</td></tr>`).join('')}</table></div>` : ''}
-      <p style="margin-top:28px"><button class="btn bad sm" onclick="UI.reset()">Ricomincia da capo</button></p>`;
+      <p style="margin-top:28px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="Tutorial.start()">❓ Rivedi il tutorial</button><button class="btn bad sm" onclick="UI.reset()">Ricomincia da capo</button></p>`;
   },
   eventCard(e) {
-    const p = P(e.pid);
-    let opts = '';
-    switch (e.type) {
-      case 'sponsor': opts = `<div class="small muted">Valore: ${fmtM(e.data.value)}/anno per ${e.data.years} ann${e.data.years > 1 ? 'i' : 'o'} · tua quota ${fmt$(e.data.value * 1e6 * SPONSOR_CUT)}/anno</div>
-        <div class="opts"><button class="btn good sm" onclick="resolveEvent(${e.id},'yes')">Accetta</button>
-        <button class="btn sm" onclick="resolveEvent(${e.id},'raise')">Rilancia +25% (rischio 45%)</button>
-        <button class="btn bad sm" onclick="resolveEvent(${e.id},'no')">Rifiuta</button></div>`; break;
-      case 'injury': opts = `<div class="opts"><button class="btn good sm" onclick="resolveEvent(${e.id},'clinic')">Clinica privata ($25k, recupero dimezzato)</button>
-        <button class="btn sm" onclick="resolveEvent(${e.id},'rest')">Recupero normale</button></div>`; break;
-      case 'scandal': opts = `<div class="opts"><button class="btn good sm" onclick="resolveEvent(${e.id},'pr')">Comunicato stampa ($15k)</button>
-        <button class="btn bad sm" onclick="resolveEvent(${e.id},'ignore')">Ignora</button></div>`; break;
-      case 'trade': opts = `<div class="opts"><button class="btn good sm" onclick="resolveEvent(${e.id},'push')">Chiedi la cessione (60%)</button>
-        <button class="btn sm" onclick="resolveEvent(${e.id},'stay')">Convincilo a restare</button></div>`; break;
-      case 'poach': opts = `<div class="small muted">Morale: ${p.morale}/100 · commissione attuale ${p.comm}%</div><div class="opts">
-        ${p.comm > 1 ? `<button class="btn good sm" onclick="resolveEvent(${e.id},'comm')">Abbassa commissione al ${p.comm - 1}%</button>` : ''}
-        <button class="btn sm" onclick="resolveEvent(${e.id},'dinner')">Cena di lusso ($20k, 60%)</button>
-        <button class="btn bad sm" onclick="resolveEvent(${e.id},'let')">Lascialo andare</button></div>`; break;
-    }
-    return `<div class="card event"><div>${esc(e.text)}</div>${opts}</div>`;
+    const def = EVENTS.find(x => x.id === e.ev);
+    const p = e.pid != null ? P(e.pid) : null;
+    if (!def) return '';
+    return `<div class="ev">
+      <div class="ev-top">${p ? `<div class="ev-av">${avatarSVG(p, 54)}<span>${e.ico}</span></div>` : `<div class="ev-ico">${e.ico}</div>`}
+        <div><h3>${esc(e.title)}</h3><p>${esc(e.text)}</p></div></div>
+      <div class="choices">${def.choices.map((ch, i) => {
+        const hint = fxText(ch.fx, e) + (ch.risk ? ` · ⚠️ ${Math.round(ch.risk.p * 100)}%: ${ch.risk.note}` : '');
+        return `<button onclick="resolveEvent(${e.id}, ${i})">${esc(ch.label)}<small>${esc(hint || 'nessun effetto')}</small></button>`;
+      }).join('')}</div></div>`;
   },
   agencyRanking() {
     const tot = {}; RIVALS.forEach(r => tot[r] = 0);
@@ -999,7 +1087,7 @@ const UI = {
     const t = teamOf(p), offers = S.offers.filter(o => o.pid === p.id).length;
     const mc = p.morale >= 65 ? 'var(--good)' : p.morale >= 35 ? 'var(--warn)' : 'var(--bad)';
     return `<div class="card">
-      <div class="pc-head"><div class="ovr ${this.ovrClass(p.ovr)}">${p.ovr}</div>
+      <div class="pc-head">${avatarSVG(p, 56)}<div class="ovr ${this.ovrClass(p.ovr)}">${p.ovr}</div>
         <div><div class="pc-name">${esc(p.name)}</div>
         <div class="pc-sub">${p.pos} · ${p.age} anni · pot. ${shownPot(p)}</div>
         <div>${p.injury ? `<span class="tag inj">infortunato ${p.injury} sett.</span>` : ''}${!t && !p.school ? '<span class="tag fa">free agent</span>' : ''}${p.school ? '<span class="tag">prospetto Draft</span>' : ''}</div></div></div>
@@ -1049,7 +1137,7 @@ const UI = {
         <tr><th>Giocatore</th><th>Ruolo</th><th class="num">Età</th><th class="num">OVR</th><th class="num">POT</th><th>${this.mkt === 'prospect' ? 'Provenienza' : 'Squadra'}</th><th>Agenzia</th><th class="num">Valore</th><th></th></tr>
         ${list.map(p => {
           const ex = exact(p);
-          return `<tr><td><a href="#" onclick="UI.player(${p.id});return false">${esc(p.name)}</a></td><td>${p.pos}</td><td class="num">${p.age}</td>
+          return `<tr><td><a class="pname" href="#" onclick="UI.player(${p.id});return false">${avatarSVG(p, 28)}${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</a></td><td>${p.pos}</td><td class="num">${p.age}</td>
           <td class="num"><b>${ex ? '' : '~'}${shownOvr(p)}</b></td><td class="num">${ex ? '' : '~'}${shownPot(p)}</td>
           <td>${p.school ? esc(p.school) : p.team != null ? esc(teamOf(p).abbr) : '—'}</td>
           <td class="small ${p.agency ? '' : 'good'}">${p.agency ? esc(p.agency) : 'Nessuna'}</td>
@@ -1139,11 +1227,11 @@ const UI = {
     const p = P(pid), t = teamOf(p), mine = isClient(p), ex = exact(p);
     const c = p.career;
     this.openModal(`
-      <div class="pc-head"><div class="ovr ${this.ovrClass(p.ovr)}">${ex ? '' : '~'}${shownOvr(p)}</div>
+      <div class="pc-head">${avatarSVG(p, 72)}<div class="ovr ${this.ovrClass(p.ovr)}">${ex ? '' : '~'}${shownOvr(p)}</div>
         <div><div class="pc-name">${esc(p.name)} ${mine ? '<span class="tag fa">tuo cliente</span>' : ''}</div>
         <div class="pc-sub">${POS_IT[p.pos]} · ${p.age} anni · potenziale ${ex ? '' : '~'}${shownPot(p)}</div></div></div>
       <dl class="rows">
-        <dt>Squadra</dt><dd>${t ? esc(teamName(t)) : p.school ? esc(p.school) : 'Free agent'}</dd>
+        <dt>Squadra</dt><dd>${t ? esc(teamName(t)) + ' · #' + p.num : p.school ? esc(p.school) : 'Free agent'}</dd>
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years}</dd>` : ''}
         <dt>Valore di mercato</dt><dd>${ex ? '' : '~'}${fmtM(shownValue(p))}</dd>
         <dt>Agenzia</dt><dd>${mine ? esc(S.agency) : p.agency ? esc(p.agency) : 'Nessuna'}</dd>
@@ -1193,7 +1281,7 @@ const UI = {
       <h2>Migliori giocatori</h2>
       <div class="tbl-wrap"><table><tr><th>Giocatore</th><th>Squadra</th><th class="num">OVR</th><th>Statistiche</th><th class="num">Stipendio</th></tr>
         ${Object.values(S.players).filter(p => p.team != null && !p.retired).sort((a, b) => playerScore(b) - playerScore(a)).slice(0, 15)
-          .map(p => `<tr class="${isClient(p) ? 'mine' : ''}"><td><a href="#" onclick="UI.player(${p.id});return false">${esc(p.name)}</a></td><td>${teamOf(p).abbr}</td><td class="num">${p.ovr}</td><td>${statLine(p)}</td><td class="num">${fmtM(p.salary)}</td></tr>`).join('')}
+          .map(p => `<tr class="${isClient(p) ? 'mine' : ''}"><td><a class="pname" href="#" onclick="UI.player(${p.id});return false">${avatarSVG(p, 28)}${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</a></td><td>${teamOf(p).abbr}</td><td class="num">${p.ovr}</td><td>${statLine(p)}</td><td class="num">${fmtM(p.salary)}</td></tr>`).join('')}
       </table></div>`;
   },
 
@@ -1234,6 +1322,73 @@ const UI = {
 
 document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') UI.closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') UI.closeModal(); });
+
+/* ================================================================== */
+/* Tutorial con Coach Gigi                                             */
+/* ================================================================== */
+const Tutorial = {
+  i: 0, el: null,
+  steps: [
+    { t: null, h: 'Benvenuto, agente!', x: 'Sono <b>Coach Gigi</b> e ti spiego come funziona. Sei un procuratore: trovi giocatori, li porti nella tua agenzia e guadagni una percentuale sui loro <b>stipendi</b> (1-4%) e sui loro <b>sponsor</b> (15%).' },
+    { t: 't-adv', h: 'Avanza settimana', x: 'Ogni tocco fa passare una settimana: si giocano le partite, incassi le commissioni, paghi lo staff e succedono gli imprevisti. La stagione è: Free Agency → stagione regolare → playoff → Draft.' },
+    { t: 't-cash', h: 'La tua cassa', x: 'Qui vedi i soldi e quanto guadagni o perdi in media a settimana. Ci paghi lo staff e le presentazioni ai giocatori. <b>Se resti in rosso per 4 settimane perdi la licenza!</b>' },
+    { t: 't-rep', h: 'La reputazione', x: 'Più è alta, più è facile convincere i campioni a firmare con te. Sale con i contratti ricchi, i premi e le scelte azzeccate; scende con figuracce e clienti persi.' },
+    { t: 't-cl', h: 'I posti in agenzia', x: 'Puoi seguire un numero limitato di clienti. Per averne di più, amplia gli <b>Uffici</b> nella scheda Staff.' },
+    { t: 't-ev', h: 'Gli imprevisti', x: 'Quasi ogni settimana succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede. <b>Devi decidere prima di avanzare.</b> Alcune scelte cambiano anche l\'aspetto del giocatore!' },
+    { t: 'tab-clients', h: 'Clienti', x: 'Qui ci sono le schede dei tuoi assistiti: contratto, morale, statistiche. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì negozi stipendio e anni. Chiedi troppo e il GM perde la pazienza. Usa <b>📞 Contatta</b> ogni settimana per tenerli contenti.' },
+    { t: 'tab-market', h: 'Mercato', x: 'Qui trovi i nuovi clienti: <b>prospetti</b> del college (vanno al Draft), <b>free agent</b> (senza squadra) e giocatori di altre agenzie. Usa 🔭 per osservare un prospetto e <b>Proponi</b> per convincerlo: una commissione più bassa lo convince più facilmente.' },
+    { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre, migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
+    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Ogni livello costa e aumenta le spese settimanali, ma ti fa guadagnare di più.' },
+    { t: 't-help', h: 'Tocca a te!', x: 'Puoi rivedere questo tutorial quando vuoi dal pulsante <b>?</b>. Primo consiglio: vai nel <b>Mercato</b>, firma un free agent e chiudi la sua trattativa. In bocca al lupo!' },
+  ],
+  start() {
+    if (!S) return;
+    UI.closeModal();
+    if (UI.tab !== 'home') { UI.tab = 'home'; UI.render(); }
+    this.i = 0; this.build(); this.show();
+  },
+  build() {
+    if (this.el) return;
+    const el = document.createElement('div');
+    el.id = 'tut'; el.hidden = true;
+    el.innerHTML = `<div class="tut-block"></div><div class="spot" id="tut-spot"></div>
+      <div class="coach" id="tut-coach">${COACH_SVG}<div class="bubble" id="tut-bubble" role="dialog" aria-live="polite"></div></div>`;
+    document.body.appendChild(el);
+    this.el = el;
+    window.addEventListener('resize', () => { if (!this.el.hidden) this.place(); });
+  },
+  show() {
+    const st = this.steps[this.i], n = this.steps.length;
+    this.el.hidden = false;
+    document.getElementById('tut-bubble').innerHTML = `<div class="who">Coach Gigi · ${this.i + 1} di ${n}</div><h4>${st.h}</h4><p>${st.x}</p>
+      <div class="nav">${this.i < n - 1 ? '<button class="skip" onclick="Tutorial.end()">Salta</button>' : '<span></span>'}
+      <span class="btns">${this.i ? '<button class="back" onclick="Tutorial.go(-1)" aria-label="Indietro">‹</button>' : ''}<button class="next" onclick="Tutorial.go(1)">${this.i < n - 1 ? 'Avanti ›' : 'Inizia a giocare!'}</button></span></div>`;
+    const tg = st.t && document.getElementById(st.t);
+    if (tg && tg.closest('main')) {
+      const head = document.querySelector('header.top'), hb = head ? head.getBoundingClientRect().bottom : 0;
+      window.scrollTo(0, window.scrollY + tg.getBoundingClientRect().top - hb - 12);
+    } else window.scrollTo(0, 0);
+    requestAnimationFrame(() => this.place());
+  },
+  place() {
+    const st = this.steps[this.i], spot = document.getElementById('tut-spot'), coach = document.getElementById('tut-coach');
+    const tg = st.t && document.getElementById(st.t);
+    if (!tg) { Object.assign(spot.style, { left: '50%', top: '40%', width: '0px', height: '0px' }); spot.classList.add('none'); coach.className = 'coach mid'; return; }
+    const r = tg.getBoundingClientRect(), pad = 6;
+    spot.classList.remove('none');
+    const bh = coach.getBoundingClientRect().height || 240;
+    const below = innerHeight - r.bottom, above = r.top;
+    let h = r.height;
+    // se il bersaglio è troppo alto, ne evidenzio solo la parte che lascia spazio al fumetto
+    if (below < bh + 24 && above < bh + 24) h = Math.max(60, innerHeight - r.top - bh - 40);
+    Object.assign(spot.style, { left: r.left - pad + 'px', top: r.top - pad + 'px', width: r.width + pad * 2 + 'px', height: h + pad * 2 + 'px' });
+    coach.className = 'coach ' + (innerHeight - (r.top + h) >= bh + 24 || above < bh + 24 ? 'bottom' : 'top');
+  },
+  go(d) { this.i += d; if (this.i >= this.steps.length) return this.end(); this.i = Math.max(0, this.i); this.show(); },
+  end() { if (this.el) this.el.hidden = true; if (S) { S.tutorialDone = true; save(); } },
+};
+
 load();
+if (S) { S.recentEv = S.recentEv || []; S.inbox = (S.inbox || []).filter(e => e.ev); }
 UI.render();
 Cloud.init();
