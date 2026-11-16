@@ -266,3 +266,7 @@ svg.avatar { display: block; flex: none; }
   #t-adv { width: 100%; padding: 9px 14px; }
   .cash-pill { padding: 5px 10px; font-size: 14px; }
 }
+
+.rels { display: flex; flex-wrap: wrap; gap: 6px; }
+.rel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 4px 10px; font-size: 12.5px; }
+.rel b { font-weight: 600; margin-left: 4px; }
