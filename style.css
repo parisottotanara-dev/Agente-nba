@@ -471,3 +471,11 @@ svg.avatar { display: block; flex: none; }
 .goal.done .gt b { color: var(--good); }
 .goal.done .gt small { color: var(--muted); }
 .brand .legend { font-size: .95em; }
+
+/* ---------- app installabile ---------- */
+html { -webkit-text-size-adjust: 100%; }
+body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+button, .btn, nav.tabs button, .seg button { -webkit-user-select: none; user-select: none; }
+.install { margin-top: 18px; text-align: left; display: grid; gap: 4px; background: #1e1530; border: 1px solid #45306b; border-radius: 14px; padding: 12px 14px; font-size: 13.5px; color: #d9cdf5; }
+.install b:first-child { font-size: 15px; color: #fff; }
+@media (display-mode: standalone) { .start { padding-top: max(48px, calc(env(safe-area-inset-top, 0px) + 24px)); } }

@@ -1397,6 +1397,7 @@ const UI = {
       <div class="start-hero">${heroSVG(null)}</div>
       <h1>Super <span>Agente</span> NBA</h1>
       <p>Costruisci l'agenzia di procuratori più potente del basket americano.</p>
+      ${UI.installHint()}
       <form onsubmit="event.preventDefault(); UI.start(this)">
         <label>Il tuo nome<input id="f-agent" name="agent" maxlength="30" placeholder="Es. Marco Rossi" required></label>
         <label>Nome dell'agenzia<input id="f-agency" name="agency" maxlength="34" placeholder="Es. Hoop Dreams Agency" required></label>
@@ -1411,6 +1412,17 @@ const UI = {
       ${has ? '<p class="small">C\'è una partita salvata: verrà sovrascritta.</p>' : ''}
       <p class="small muted">Squadre, giocatori, sponsor e personaggi famosi sono parodie con nomi storpiati.</p>
     </div>`;
+  },
+  // Invito a installare l'app: solo nel browser del telefono, non quando è già installata
+  installHint() {
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    let framed = true; try { framed = window.self !== window.top; } catch (e) { /* dentro un'altra pagina */ }
+    if (standalone || framed || window.claude || !/^https?:/.test(location.protocol)) return '';
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    return `<div class="install"><b>📲 Installa l'app</b><span>${ios
+      ? 'In Safari tocca <b>Condividi</b> (il quadrato con la freccia) e poi <b>Aggiungi alla schermata Home</b>.'
+      : 'Apri il menu del browser e scegli <b>Installa app</b> o <b>Aggiungi alla schermata Home</b>.'}
+      Si aprirà a schermo intero e funzionerà anche senza internet.</span></div>`;
   },
   start(f) { newGame(f.agency.value.trim(), f.agent.value.trim()); this.tab = 'home'; this.render(); window.scrollTo(0, 0); setTimeout(() => Tutorial.start(), 400); },
 

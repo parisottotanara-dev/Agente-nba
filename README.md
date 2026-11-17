@@ -17,6 +17,13 @@ Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, 
 - **Notifiche in stile arcade**; se c'è un imprevisto la visuale si sposta lì e non puoi avanzare finché non decidi.
 - **Home illustrata**: il cliente più pagato schiaccia con la maglia, il numero e il look veri.
 
+## 📲 Installare l'app sull'iPhone
+1. Apri **https://parisottotanara-dev.github.io/Agente-nba/** con **Safari**.
+2. Tocca **Condividi** (il quadrato con la freccia) → **Aggiungi alla schermata Home** → **Aggiungi**.
+3. Apri il gioco dall'icona: parte a schermo intero e funziona anche senza internet.
+
+Gli aggiornamenti arrivano da soli: quando c'è internet l'app scarica sempre l'ultima versione.
+
 ## Come si gioca
 Apri `index.html` nel browser, oppure pubblica il repository con GitHub Pages e su iPhone usa Safari → Condividi → **Aggiungi alla schermata Home**.
 Funziona offline e salva da solo la partita nel browser.
