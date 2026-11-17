@@ -73,8 +73,8 @@ const EVENT_TUNE = {
 
 // Che tipo di personaggio famoso serve all'imprevisto (gli altri usano chiunque)
 const CELEB_KIND = {
-  music: ['Taylor Swiffer', 'Snoop Doggo', 'Eros Ramazzotto', 'Billie Eyelash', 'Kanye Best', 'Rihanna Banana', 'Shakiro',
-    'Bruno Marte', 'Ed Sheerin', 'Harry Stiles', 'Gianni Morandini', 'Lady Gagà', 'Drakko'],
+  music: ['Taylor Swiffer', 'Snoop Dogsitter', 'Eros Ramazzotto', 'Billie Eyelash', 'Kanye Best', 'Rihanna Banana', 'Shakiro',
+    'Bruno Marte', 'Ed Sheerin', 'Harry Stiles', 'Gianni Morandini', 'Lady Gaggia', 'Drago'],
   actor: ['Leo DiCaprino', 'Brad Pitbull', 'Keanu Leaves', 'Morgan Freezer', 'Dwayne "La Roccia" Johnsoni', 'Zendayana',
     'Tom Cruiseship', 'Will Smithers'],
 };

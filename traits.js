@@ -7,33 +7,33 @@
 'use strict';
 
 const TRAITS = {
-  festaiolo: { label: 'Festaiolo', icon: '🎉', desc: 'Non perde una festa. Il morale è alto, la puntualità un po\' meno.',
+  festaiolo: { label: 'Festaiolo', icon: '🎉', desc: 'Conosce il DJ di ogni città NBA. La sveglia, invece, non l\'ha mai conosciuta.',
     boost: ['vacanza', 'paparazzi', 'tiktok', 'auto', 'catena', 'sonno', 'trasferta', 'matrimonio'], dampen: ['scacchi', 'scuola', 'yoga'] },
-  aggressivo: { label: 'Aggressivo', icon: '😤', desc: 'In campo non si tira mai indietro. A volte esagera.',
+  aggressivo: { label: 'Aggressivo', icon: '😤', desc: 'Difende forte anche ai videogiochi. Gli arbitri lo chiamano per nome, e non per affetto.',
     boost: ['tecnico', 'rivalita', 'coach_lite', 'maschera', 'dente', 'mascotte'], dampen: ['bambino', 'ospedale', 'yoga'] },
-  gentile: { label: 'Gentile', icon: '💛', desc: 'Il bravo ragazzo dello spogliatoio. Ama aiutare gli altri.',
+  gentile: { label: 'Gentile', icon: '💛', desc: 'Chiede scusa al ferro quando sbaglia un tiro. Impossibile non volergli bene.',
     boost: ['bambino', 'ospedale', 'fondazione', 'campo_quartiere', 'asta', 'rasato', 'scuola', 'ambiente'], dampen: ['tecnico', 'rivalita', 'coach_lite'] },
-  leader: { label: 'Leader', icon: '🧢', desc: 'Parla poco ma quando parla lo ascoltano tutti.',
+  leader: { label: 'Leader', icon: '🧢', desc: 'Quando parla lui, anche il coach prende appunti.',
     boost: ['capitano', 'mentore', 'record', 'partita_40', 'nazionale'], dampen: ['panchina', 'brutta_partita'] },
-  timido: { label: 'Timido', icon: '🙈', desc: 'Fortissimo in campo, terrorizzato da microfoni e telecamere.',
+  timido: { label: 'Timido', icon: '🙈', desc: 'In campo segna 30 punti. Davanti a un microfono, 30 secondi di silenzio.',
     boost: ['gaffe', 'hater', 'intervista'], dampen: ['tiktok', 'talkshow', 'reality', 'podcast', 'documentario', 'sfilata'] },
-  vanitoso: { label: 'Vanitoso', icon: '💅', desc: 'Lo specchio è il suo migliore amico. Adora i riflettori.',
+  vanitoso: { label: 'Vanitoso', icon: '💅', desc: 'Si riscalda davanti allo specchio e gioca davanti alle telecamere. Il pallone viene dopo.',
     boost: ['sfilata', 'capelli_colore', 'cresta', 'catena', 'paparazzi', 'documentario', 'murale', 'cartellone', 'treccine'], dampen: ['rasato'] },
-  avido: { label: 'Attaccato ai soldi', icon: '💰', desc: 'Conta ogni dollaro. Pretende bonus e contratti ricchi.',
+  avido: { label: 'Attaccato ai soldi', icon: '💰', desc: 'Divide il conto della pizza al centesimo, anche quando offri tu. Vuole contratti ricchi.',
     boost: ['pizzeria', 'cripto', 'nft', 'app', 'clausola', 'rivale', 'immobili'], dampen: ['fondazione', 'asta'] },
-  leale: { label: 'Leale', icon: '🤝', desc: 'Una volta che si fida, è per sempre. Difficile portartelo via.',
+  leale: { label: 'Leale', icon: '🤝', desc: 'Ha lo stesso barbiere dalle elementari. Se si fida di te, nessuno te lo porta via.',
     boost: ['figlio', 'matrimonio', 'tifosi_casa'], dampen: ['rivale', 'scambio'] },
-  professionista: { label: 'Stakanovista', icon: '🏋️', desc: 'Primo ad arrivare in palestra, ultimo ad andarsene.',
+  professionista: { label: 'Stakanovista', icon: '🏋️', desc: 'Il custode del palazzetto gli ha dato le chiavi, per disperazione.',
     boost: ['allenamento_estivo', 'dieta', 'yoga', 'crio', 'mentore', 'ruolo'], dampen: ['vacanza', 'sonno', 'tiktok'] },
-  scaramantico: { label: 'Scaramantico', icon: '🍀', desc: 'Riti, amuleti e calzini portafortuna. Guai a toccarli.',
+  scaramantico: { label: 'Scaramantico', icon: '🍀', desc: 'I calzini portafortuna sono stati lavati l\'ultima volta nel 2019. Guai a toccarli.',
     boost: ['superstizione', 'fascia', 'numero', 'copertina', 'barba'], dampen: [] },
-  permaloso: { label: 'Permaloso', icon: '😾', desc: 'Si offende facilmente e non dimentica. Va trattato coi guanti.',
+  permaloso: { label: 'Permaloso', icon: '😾', desc: 'Ricorda ogni critica, con data, ora e nome del giornalista.',
     boost: ['hater', 'rivalita', 'panchina', 'fake_news', 'brutta_partita'], dampen: [] },
-  ambizioso: { label: 'Ambizioso', icon: '🔥', desc: 'Non è mai soddisfatto. Vuole diventare il migliore e il suo potenziale può crescere.',
+  ambizioso: { label: 'Ambizioso', icon: '🔥', desc: 'Ha vinto un torneo e ha chiesto subito qual è il prossimo. Il suo potenziale può crescere.',
     boost: ['allenamento_estivo', 'rivalita', 'capitano', 'nazionale', 'ruolo', 'mentore'], dampen: ['vacanza', 'sonno'] },
-  appagato: { label: 'Si accontenta', icon: '😴', desc: 'Raggiunto un buon contratto tende a rilassarsi: rischia di sprecare il suo potenziale.',
+  appagato: { label: 'Si accontenta', icon: '😴', desc: 'Firmato il contratto, ha comprato un divano. Indovina dove passa le estati. Rischia di sprecare il potenziale.',
     boost: ['vacanza', 'immobili', 'auto', 'sonno', 'cucina'], dampen: ['allenamento_estivo', 'dieta', 'yoga'] },
-  burlone: { label: 'Burlone', icon: '🤡', desc: 'Il re degli scherzi. Fa ridere tutti, a volte troppo.',
+  burlone: { label: 'Burlone', icon: '🤡', desc: 'Lo spogliatoio ride, il coach conta fino a dieci. Spesso fino a cento.',
     boost: ['meme', 'tiktok', 'spogliatoio', 'mascotte', 'robot', 'alieni', 'gemello', 'cane'], dampen: ['scacchi'] },
 };
 // Tratti che non stanno bene insieme
@@ -120,21 +120,31 @@ const STORY = {
     'Gira con una macchina fotografica a pellicola e fotografa i tifosi.',
   ],
   dream: [
-    'Sogna di aprire una scuola di basket nel quartiere dove è cresciuto.',
-    'Vuole vincere un anello da regalare a sua madre.',
-    'Il suo sogno è giocare un All-Star Game con tutta la famiglia in tribuna.',
-    'Vuole diventare il primo giocatore del suo paese a vincere l\'MVP.',
-    'Sogna di ritirarsi in una casa sul mare e aprire un chiosco di gelati.',
-    'Vuole la maglia ritirata dalla squadra della sua città.',
-    'Sogna di fare l\'allenatore, un giorno, nel liceo che lo ha lanciato.',
-    'Vuole entrare nella Hall of Fame e fare il discorso più corto della storia.',
-    'Sogna di giocare almeno una partita nel campetto dove ha iniziato, da professionista.',
-    'Vuole comprare una casa ai genitori, con un canestro vero in giardino.',
-    'Sogna di vincere l\'oro olimpico con la sua nazionale.',
-    'Vuole battere il record di triple in una partita, anche solo per un giorno.',
-    'Sogna di diventare un attore, quando avrà appeso le scarpe al chiodo.',
-    'Vuole che un bambino, un giorno, indossi la sua maglia al campetto.',
-    'Sogna di giocare contro il suo idolo d\'infanzia, almeno una volta.',
+    'Il suo sogno è vincere un anello. Il secondo è aprire una gelateria con 40 gusti, tutti al cioccolato.',
+    'Sogna di vincere l\'MVP e di essere ricordato. Possibilmente non per le scarpe che indossa.',
+    'Vuole una statua davanti al palazzetto. Ha già scelto la posa e ha chiesto che sia più alta di lui.',
+    'Vuole entrare nella Hall of Fame e fare il discorso più corto della storia: "Grazie, ciao".',
+    'Sogna di battere un record NBA. Uno qualsiasi, dice. Anche quello dei falli tecnici.',
+    'Vuole giocare finché ha 40 anni. Il suo ginocchio sinistro non è d\'accordo.',
+    'Sogna di comprare una casa ai genitori. Loro vorrebbero solo che rispondesse al telefono.',
+    'Vuole diventare attore dopo il ritiro. Ha già girato un film: 12 visualizzazioni, 10 sono sue.',
+    'Vuole la maglia ritirata dalla sua squadra. Intanto ha ritirato quella del liceo, da solo, nell\'armadio.',
+    'Sogna di schiacciare in testa al suo idolo d\'infanzia, e poi chiedergli un autografo.',
+  ],
+  // come lo descrive qualcuno che lo conosce bene
+  said: [
+    ['lo scout che lo ha visto per primo', 'Braccia lunghe, mani buone, gusti musicali discutibili.'],
+    ['sua madre', 'Bravo, bravo. Ma quando ti trovi un lavoro vero?'],
+    ['il suo allenatore del liceo', 'Non ho mai visto nessuno sbagliare così tanti tiri con così tanta fiducia.'],
+    ['sua nonna', 'Mangia poco. Scrivetelo.'],
+    ['il suo compagno di stanza al college', 'Russa in tre lingue.'],
+    ['uno scout rivale', 'Tra cinque anni sarà una star, oppure venderà assicurazioni. Non c\'è una via di mezzo.'],
+    ['il suo primo coach', 'Il talento c\'era. La puntualità l\'abbiamo aspettata quattro anni.'],
+    ['suo fratello maggiore', 'Gli ho insegnato tutto io. Poi ha iniziato a battermi e ho smesso di insegnare.'],
+    ['un ex compagno di squadra', 'Passa la palla solo a chi gli sta simpatico. Per fortuna gli stanno simpatici quasi tutti.'],
+    ['il preside della sua scuola', 'Bravissimo ragazzo. Il canestro della palestra lo paghiamo ancora a rate.'],
+    ['il suo preparatore', 'Ha un fisico da statua greca e la disciplina di un gatto.'],
+    ['il suo vicino di casa', 'Palleggia alle sei di mattina da quando ha otto anni. Gli auguro tutto il successo del mondo, lontano da qui.'],
   ],
 };
 // Una riga legata al carattere, così la storia "spiega" il tratto
@@ -171,15 +181,22 @@ function pickFresh(cat, arr) {
 function storyOf(p) {
   if (!p.traits) p.traits = genTraits();
   if (!p.story) {
-    const tl = TRAIT_LINES[p.traits[0]];
-    const origin = `${STORY.originVerb[Math.floor(Math.random() * 3)]} ${pickFresh('place', STORY.place)}, ${pickFresh('family', STORY.family)}.`;
-    p.story = [origin, pickFresh('start', STORY.start), pickFresh('t_' + p.traits[0], tl),
-      Math.random() < 0.5 ? pickFresh('quirk', STORY.quirk) : pickFresh('dream', STORY.dream)].join(' ');
+    const tl = () => pickFresh('t_' + p.traits[0], TRAIT_LINES[p.traits[0]]);
+    const origin = () => `${STORY.originVerb[Math.floor(Math.random() * 3)]} ${pickFresh('place', STORY.place)}, ${pickFresh('family', STORY.family)}.`;
+    const said = () => { const [who, q] = pickFresh('said', STORY.said); return `Secondo ${who}: "${q}"`; };
+    const r = Math.random();
+    let parts;
+    if (r < 0.3) parts = [origin(), pickFresh('start', STORY.start), tl()];
+    else if (r < 0.55) parts = [said(), tl(), pickFresh('quirk', STORY.quirk)];
+    else if (r < 0.75) parts = [pickFresh('start', STORY.start), said()];
+    else if (r < 0.9) parts = [tl(), `Segno particolare: ${pickFresh('quirk', STORY.quirk).replace(/^./, c => c.toLowerCase())}`];
+    else parts = [origin(), tl(), pickFresh('dream', STORY.dream)];
+    p.story = parts.join(' ');
   }
   return p.story;
 }
 const hasTrait = (p, t) => !!(p && p.traits && p.traits.includes(t));
-const traitChips = p => (p.traits || []).map(t => `<span class="trait" title="${TRAITS[t].desc}">${TRAITS[t].icon} ${TRAITS[t].label}</span>`).join('');
+const traitChips = p => (p.traits || []).map(t => `<span class="trait t-${t}" title="${TRAITS[t].desc}">${TRAITS[t].label}</span>`).join('');
 
 /* ---------- Imprevisti legati al carattere ---------- */
 EVENTS.push(
