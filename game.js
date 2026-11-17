@@ -270,7 +270,7 @@ const STAFF = {
   marketing: { name: 'Marketing', icon: '📣', desc: '+10% valore sponsor e +3% probabilità di convincere nuovi clienti.' },
   office: { name: 'Uffici', icon: '🏢', desc: '+3 posti cliente per livello.' },
   hq: { name: 'Sede', icon: '🏙️', desc: 'Una sede più prestigiosa: +4% di probabilità che i giocatori accettino di incontrarti, e la tua reputazione cala più lentamente.' },
-  academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma dei ragazzi che arrivano al Draft già legati a te. Più è grande, più ne escono e più sono forti.' },
+  academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma dei ragazzi che arrivano al Draft già legati a te. Più è grande, più ne escono e più sono forti, e più spesso nasce un 💎 talento generazionale da trasformare in campione.' },
   informer: { name: 'Informatore', icon: '🕵️', desc: 'Ti passa soffiate sui prospetti del prossimo Draft: potenziale, chi vuole essere seguito, chi sta per firmare con un rivale. All\'inizio è scarso e a volte sbaglia.' },
 };
 const UPGRADE_COSTS = { hq: [250000, 700000, 1800000, 4500000, 10000000], academy: [400000, 1000000, 2500000, 5000000, 9000000] };
@@ -1229,10 +1229,20 @@ function academyClass() {
   for (let i = 0; i < n; i++) {
     const p = newPlayer('prospect');
     Object.assign(p, { age: randi(18, 19), ovr: randi(52, 57) + lv, school: `Accademia ${S.agency}`, scouted: true, agency: null, bond: clamp(55 + lv * 6 + randi(0, 8), 0, 100) });
-    p.pot = clamp(66 + lv * 3 + randi(0, 10), p.ovr + 6, 92); // al massimo livello: potenziale 81-91
+    p.pot = clamp(66 + lv * 3 + randi(0, 10), p.ovr + 6, 92); // di solito buoni giocatori: al massimo livello potenziale 81-91
+    p.academy = true;
     S.players[p.id] = p; names.push(p.name);
   }
   addNews(`🎓 Dalla tua accademia escono ${names.map(n => `<b>${esc(n)}</b>`).join(', ')}: sono nel Mercato tra i prospetti, già legati a te.`, 'good');
+  // ogni tanto nasce un talento generazionale: più l'accademia è grande, più è probabile
+  if (chance(0.06 * lv)) {
+    const g = newPlayer('prospect');
+    Object.assign(g, { age: 18, ovr: randi(58, 63) + lv, school: `Accademia ${S.agency}`, scouted: true, agency: null, academy: true, gem: true, bond: clamp(70 + lv * 5, 0, 100), hype: 30 });
+    g.pot = randi(92, 98);
+    S.players[g.id] = g;
+    addNews(`💎 Nella tua accademia è sbocciato un <b>talento generazionale</b>: <b>${esc(g.name)}</b>, 18 anni, potenziale ~${g.pot}. Non fartelo scappare!`, 'gold');
+    UI.pendingToast = [`${g.name}, 18 anni, potenziale ~${g.pot}: è nel Mercato tra i prospetti.`, 'goal', 'Talento generazionale!'];
+  }
 }
 
 /* ================================================================== */
@@ -1556,6 +1566,7 @@ function legendCamp(pid, ci) {
   const lg = legendFor(p);
   let gain = Math.round(c.base + rand(-0.5, 1));
   if (p.age <= 24) gain += chance(0.4) ? 1 : 0;
+  if (p.age <= 24 && p.pot - p.ovr >= 8 && chance(0.5)) gain += 1; // un vero talento risponde meglio agli allenamenti
   if (p.age >= 30) gain -= 1;
   if (hasTrait(p, 'professionista') || hasTrait(p, 'ambizioso')) gain += 1;
   if (hasTrait(p, 'appagato')) gain -= 1;
@@ -1579,7 +1590,13 @@ function offseason() {
     if (p.retired) continue;
     p.age++;
     // sviluppo: età, carattere, camp estivo
+    const before = p.ovr;
     developPlayer(p);
+    // traguardi dei tuoi giocatori: un campione costruito da te
+    if (isClient(p)) for (const lvl of [85, 90, 95]) if (before < lvl && p.ovr >= lvl) {
+      addNews(`🌟 <b>${esc(p.name)}</b> è arrivato a <b>${lvl}</b> di valutazione${p.academy ? ', ed è cresciuto nella tua accademia' : ''}!`, 'gold');
+      if (p.academy && lvl >= 90) checkGoal('homegrown', true);
+    }
     if (isClient(p) && p.potNote === 'up') addNews(`🔥 ${esc(p.name)} vuole sempre migliorare: il suo potenziale è salito a ${p.pot}.`, 'good');
     if (isClient(p) && p.potNote === 'down') addNews(`😴 ${esc(p.name)} si è accontentato: il suo potenziale è sceso a ${p.pot}.`, 'warn');
     if (p.team != null) p.career.seasons++;
@@ -1650,6 +1667,7 @@ const GOALS = [
   ['legend', 'Reputazione 100: agente leggendario'],
   ['owner', 'Diventa socio di una squadra NBA'],
   ['majority', 'Compra il 51% di una squadra: sei il presidente'],
+  ['homegrown', 'Crea un campione: un ragazzo della tua accademia arriva a 90'],
 ];
 // Ricompense degli obiettivi: più è difficile, più si vince
 const GOAL_REWARDS = {
@@ -1666,6 +1684,7 @@ const GOAL_REWARDS = {
   legend: { cash: 1000, title: true },
   owner: { rep: 3, teamRel: 3 },
   majority: { cash: 2000, badge: true },
+  homegrown: { cash: 1500, rep: 5, star: true },
 };
 function rewardText(r) {
   const o = [];
@@ -1676,6 +1695,7 @@ function rewardText(r) {
   if (r.staff) o.push(`${STAFF[r.staff].icon} ${STAFF[r.staff].name} +1 livello gratis`);
   if (r.title) o.push('🏆 titolo di Agente leggendario');
   if (r.badge) o.push('👑 titolo di Presidente');
+  if (r.star) o.push('🌟 titolo di Scopritore di talenti');
   return o.join(' · ');
 }
 function giveReward(k) {
@@ -1693,6 +1713,7 @@ function giveReward(k) {
   }
   if (r.title) S.legend = true;
   if (r.badge) S.president = true;
+  if (r.star) S.talentScout = true;
   return txt;
 }
 function checkGoal(k, cond) {
@@ -1740,7 +1761,7 @@ const UI = {
     app.innerHTML = `
       <header class="top">
         <div class="top-row">
-          <div class="brand">🏀 <span>${esc(S.agency)}</span>${S.legend ? ' <span class="legend" title="Agente leggendario">🏆</span>' : ''}${S.president ? ' <span class="legend" title="Presidente">👑</span>' : ''}</div>
+          <div class="brand">🏀 <span>${esc(S.agency)}</span>${S.legend ? ' <span class="legend" title="Agente leggendario">🏆</span>' : ''}${S.president ? ' <span class="legend" title="Presidente">👑</span>' : ''}${S.talentScout ? ' <span class="legend" title="Scopritore di talenti">🌟</span>' : ''}</div>
           <div class="spacer"></div>
           <div class="cash-pill ${S.cash < 0 ? 'bad' : ''}" id="t-cash2">💰 ${fmt$(S.cash)}</div>
           <button class="btn help" id="t-help" onclick="Tutorial.start()" aria-label="Rivedi il tutorial">?</button>
@@ -1970,7 +1991,7 @@ const UI = {
     return `<article class="mk ${cls}">
       <button class="mk-main" onclick="UI.player(${p.id})">
         ${avatarSVG(p, 48)}
-        <span class="mk-info"><b>${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</b>
+        <span class="mk-info"><b>${esc(p.name)}${p.gem ? ' 💎' : p.academy ? ' 🎓' : ''}${p.star || p.vip ? ' ⭐' : ''}</b>
           <span>${p.pos} · ${p.age} anni · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
           <span class="${p.agency ? '' : 'good'}">${p.agency ? '🔒 ' + esc(p.agency) : '🟢 nessun agente'}</span>
           <span class="ti">${(p.traits || []).map(t => TRAITS[t].icon + ' ' + TRAITS[t].label).join(' · ')}</span></span>

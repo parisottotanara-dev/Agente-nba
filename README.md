@@ -7,6 +7,7 @@ Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, 
 - **110 imprevisti** (`events.js`): quasi ogni settimana una scelta da fare; alcuni cambiano l'aspetto del giocatore (tatuaggi, capelli, occhiali...).
 - **Rapporti** con giocatori, squadre e sponsor: le tue scelte li cambiano, e da loro dipende la probabilità che accettino le tue richieste (`tuning.js`).
 - **Trattative più vere**: con le squadre valore stimato a forbice, preferenze del giocatore (soldi, vincere, grande città, minuti), offerte che scadono, asta con le altre offerte e bluff; per diventare agente commissioni normali (2-4%), limite segreto da indovinare, agenzie rivali che si intromettono e promesse da mantenere.
+- **Crea i tuoi campioni**: l'accademia forma buoni giocatori e ogni tanto un 💎 talento generazionale; i camp rendono di più sui giovani di talento; obiettivo "Crea un campione" con il titolo 🌟 Scopritore di talenti.
 - **Gioco lungo**: 3 sfide nuove ogni stagione, sede e accademia giovanile, quote di una squadra NBA fino a diventarne presidente, fondazione benefica, costi che crescono con l'agenzia.
 - **Carriera realistica**: potenziale legato all'età (giovani in crescita, apice verso i 28 anni, poi declino), tratti 🔥 Ambizioso e 😴 Si accontenta che alzano o abbassano il potenziale, infortuni che tolgono forma per un periodo (non allo stakanovista), camp estivi con le leggende.
 - **Obiettivi con ricompense**: soldi, reputazione, livelli di staff gratis, rapporti migliori e il titolo di Agente leggendario 🏆.

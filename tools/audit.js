@@ -10,8 +10,9 @@ const SEASONS = +process.argv[2] || 50;
   await pg.evaluate(() => {
     Tutorial.end(); UI.showWeek = a => a && a();
     window.ISS = {}; window.issue = (k, ex) => { ISS[k] = ISS[k] || { n: 0, ex }; ISS[k].n++; };
-    window.STATS = []; window.PROM = { kept: 0, broken: 0, made: 0, byType: {} };
+    window.STATS = []; window.GEMS = 0; window.PROM = { kept: 0, broken: 0, made: 0, byType: {} };
     const oa = addNews; window.addNews = (t, c) => {
+      if (/talento generazionale/.test(t)) GEMS++;
       const m = t.match(/Promessa (mantenuta|mancata) con .*?: (.*?)[.]/);
       if (m) { const k = m[1] === 'mantenuta' ? 'kept' : 'broken'; PROM[k]++; PROM.byType[m[2]] = PROM.byType[m[2]] || { kept: 0, broken: 0 }; PROM.byType[m[2]][k]++; }
       oa(t, c);
@@ -104,7 +105,8 @@ const SEASONS = +process.argv[2] || 50;
         (ov.reduce((a, b) => a + b, 0) / ov.length).toFixed(1), ov.filter(o => o >= 85).length, ov.filter(o => o >= 90).length, ov[0],
         Math.round(Math.min(...pay)) + '-' + Math.round(Math.max(...pay)), pay.filter(x => x > CAP).length,
         S.clients.length, (S.cash / 1e6).toFixed(1), S.rep, Math.round((h.income || 0) / 1e3), Object.keys(S.goals).length,
-        Math.round(JSON.stringify(S).length / 1024)].join(' | ');
+        Math.round(JSON.stringify(S).length / 1024),
+        'accad85+ ' + ros.filter(p => p.academy && p.ovr >= 85).length + ' accad90+ ' + ros.filter(p => p.academy && p.ovr >= 90).length + ' clienti85+ ' + clients().filter(p => p.ovr >= 85).length + ' gemme ' + (window.GEMS || 0) + (S.goals.homegrown ? ' CAMPIONE:' + S.goals.homegrown : '')].join(' | ');
     });
     console.log(line);
     if (season % 10 === 9) {
