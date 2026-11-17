@@ -6,6 +6,7 @@ Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, 
 - **Tutorial** con Coach Gigi alla prima partita (rivedibile col pulsante ?).
 - **110 imprevisti** (`events.js`): quasi ogni settimana una scelta da fare; alcuni cambiano l'aspetto del giocatore (tatuaggi, capelli, occhiali...).
 - **Rapporti** con giocatori, squadre e sponsor: le tue scelte li cambiano, e da loro dipende la probabilità che accettino le tue richieste (`tuning.js`).
+- **Carriera realistica**: potenziale legato all'età (giovani in crescita, apice verso i 28 anni, poi declino), tratti 🔥 Ambizioso e 😴 Si accontenta che alzano o abbassano il potenziale, infortuni che tolgono forma per un periodo (non allo stakanovista), camp estivi con le leggende.
 - **Obiettivi con ricompense**: soldi, reputazione, livelli di staff gratis, rapporti migliori e il titolo di Agente leggendario 🏆.
 - **Carattere e storia**: ogni giocatore ha 1-2 tratti (festaiolo, aggressivo, gentile, leader…) e una piccola storia inventata che non si ripete; il carattere decide che imprevisti gli capitano (`traits.js`).
 - **Partite settimana per settimana**: in Home prossima partita, posizione in classifica e medie; dopo ogni settimana i risultati con il voto (A+…F) di ogni tuo giocatore.

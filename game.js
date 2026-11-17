@@ -99,6 +99,7 @@ function shownOvr(p) {
   return clamp(Math.round(p.ovr + p.noise2 * scoutSD() * 0.5), 30, 99);
 }
 function shownPot(p) {
+  if (!p.school) return p.pot;
   const k = isClient(p) || p.scouted ? 0.25 : 1;
   // se l'informatore ne sa più dello scout, vale la sua stima
   if (!isClient(p) && p.intelPot != null && p.intelSd < scoutSD() * k) return clamp(p.intelPot, shownOvr(p), 99);
@@ -786,9 +787,10 @@ function applyFx(f, inst, p) {
   if (f.hype) p.hype = clamp(p.hype + f.hype, 0, 100);
   if (f.ovr) { p.ovr = clamp(p.ovr + f.ovr, 35, 99); p.pot = Math.max(p.pot, p.ovr); }
   if (f.pot) p.pot = clamp(p.pot + f.pot, p.ovr, 99);
+  if (f.pot || f.ovr) capPot(p);
   if (f.draftBoost) p.draftBoost = (p.draftBoost || 0) + f.draftBoost;
   if (f.stayCollege && p.school) p.skipDraft = S.season;
-  if (f.inj) p.injury = Math.max(p.injury, f.inj);
+  if (f.inj) { p.injury = Math.max(p.injury, f.inj); injuryHit(p, f.inj); }
   if (f.comm) p.comm = clamp(p.comm + f.comm, 1, 4);
   if (f.look) { p.look = { ...(p.look || {}), ...f.look }; if (f.look.number != null) p.num = f.look.number; }
   if (f.sponsor && inst.data.value) {
@@ -1044,6 +1046,7 @@ function advance() {
     for (const p of clients()) if (p.team != null) earn(p.salary * 1e6 * p.comm / 100 / REG_WEEKS);
     for (const p of Object.values(S.players)) {
       if (p.injury) p.injury--;
+      else if (p.injDebt) { p.injDebt--; p.ovr = Math.min(99, p.ovr + 1); } // torna in forma un punto a settimana
       p.hype = Math.max(0, p.hype * 0.98 + (p.team != null && p.gp ? (avg(p, 'pts') - 12) * 0.05 : 0));
     }
     moraleDrift();
@@ -1206,22 +1209,99 @@ function runDraft() {
   }
 }
 
+/* ================================================================== */
+/* Carriera: età, potenziale, carattere, infortuni, camp con leggende  */
+/* ================================================================== */
+// Quanto può ancora crescere un giocatore in base all'età: da giovane tanto, dai 29 anni il tetto è il livello attuale
+const potRoom = age => age <= 20 ? 38 : age <= 21 ? 33 : age <= 22 ? 27 : age <= 23 ? 21 : age <= 24 ? 15 : age <= 25 ? 10 : age <= 26 ? 6 : age <= 27 ? 3 : age <= 28 ? 1 : 0;
+function capPot(p) { p.pot = clamp(Math.min(p.pot, p.ovr + potRoom(p.age)), p.ovr, 99); }
+function careerPhase(p) {
+  if (p.school || p.age <= 22) return p.pot - p.ovr >= 8 ? ['🌱', 'In crescita'] : ['🌱', 'Giovane'];
+  if (p.age <= 26) return p.pot - p.ovr >= 4 ? ['📈', 'In ascesa'] : ['💪', 'Nel pieno'];
+  if (p.age <= 29) return ['⭐', 'All\'apice'];
+  if (p.age <= 32) return ['📉', 'Inizia il declino'];
+  return ['🧓', 'Fine carriera'];
+}
+// Sviluppo di fine stagione (dopo il compleanno)
+function developPlayer(p) {
+  const pro = hasTrait(p, 'professionista'), amb = hasTrait(p, 'ambizioso'), sat = hasTrait(p, 'appagato');
+  let d;
+  if (p.age <= 22) d = (p.pot - p.ovr) * rand(0.15, 0.35);
+  else if (p.age <= 26) d = (p.pot - p.ovr) * rand(0.15, 0.4) + rand(-1, 1);
+  else if (p.age <= 29) d = rand(-1.5, 1.5);
+  else if (p.age <= 32) d = rand(-3.5, 0.5);
+  else d = rand(-6, -1.5);
+  if (pro) d = d < 0 ? d * 0.5 : d + (chance(0.6) ? 1 : 0); // lavora come un matto: cresce di più, cala la metà
+  if (amb && p.age <= 30 && chance(0.5)) d += 1;
+  if (sat) d = d > 0 ? d * 0.6 : d * 1.3;
+  if (hasTrait(p, 'festaiolo') && chance(0.3)) d -= 1;
+  if (p.campBoost) { d = d < 0 ? d * 0.5 : d; p.campBoost = false; } // il camp estivo frena il declino
+  p.ovr = clamp(Math.round(p.ovr + d), 35, 99);
+  p.potNote = null;
+  if (amb && p.age <= 29 && chance(0.45)) { p.pot += randi(1, 3); p.potNote = 'up'; }
+  if (sat && (p.salary >= 12 || p.career.allstar || p.career.titles) && chance(0.5)) { p.pot -= randi(2, 5); p.potNote = 'down'; }
+  capPot(p);
+}
+// Un infortunio lungo fa perdere un po' di forma, che si recupera piano piano. Lo stakanovista no.
+function injuryHit(p, weeks) {
+  if (weeks < 3 || hasTrait(p, 'professionista')) return;
+  const k = Math.min(4, Math.ceil(weeks / 5));
+  p.ovr = Math.max(35, p.ovr - k); p.injDebt = (p.injDebt || 0) + k;
+}
+
+/* ---------- Camp estivo con una leggenda ---------- */
+const LEGENDS = {
+  PG: ['Magic Jonson', 'Steve Nashh', 'Allen Iversonn'], SG: ['Michael Giordano', 'Kobe Bryanto', 'Dwyane Wadè'],
+  SF: ['Larry Uccello', 'Scottie Pippenn', 'Paul Pierz'], PF: ['Tim Duncano', 'Dirk Novitzkij', 'Kevin Garnettt'],
+  C: ['Kareem Abdul-Jabbarr', 'Shaquille O\'Nil', 'Hakeem Olajuwonn'],
+};
+const CAMPS = [
+  { id: 0, label: 'Una settimana', cost: 40, base: 1 },
+  { id: 1, label: 'Un mese', cost: 90, base: 2 },
+  { id: 2, label: 'Tutta l\'estate', cost: 160, base: 3 },
+];
+const legendFor = p => LEGENDS[p.pos][(p.id + S.season) % 3];
+// Stima del camp: stessa formula del risultato vero, senza la parte casuale
+function campPreview(p, c) {
+  const mod = (hasTrait(p, 'professionista') || hasTrait(p, 'ambizioso') ? 1 : 0) - (hasTrait(p, 'appagato') ? 1 : 0) - (p.age >= 30 ? 1 : 0);
+  const lo = c.base - 1 + mod - (hasTrait(p, 'festaiolo') ? 1 : 0);
+  const hi = c.base + 1 + mod + (p.age <= 24 ? 1 : 0);
+  return [Math.max(0, lo), Math.max(0, hi)];
+}
+function legendCamp(pid, ci) {
+  const p = P(pid), c = CAMPS[ci], cost = c.cost * 1000;
+  if (p.campSeason === S.season) return { msg: `${p.name} ha già fatto il camp questa stagione.`, type: 'warn' };
+  if (S.cash < cost) return { msg: `Servono ${fmt$(cost)}.`, type: 'bad' };
+  spend(cost); p.campSeason = S.season;
+  const lg = legendFor(p);
+  let gain = c.base + randi(-1, 1);
+  if (p.age <= 24) gain += chance(0.4) ? 1 : 0;
+  if (p.age >= 30) gain -= 1;
+  if (hasTrait(p, 'professionista') || hasTrait(p, 'ambizioso')) gain += 1;
+  if (hasTrait(p, 'appagato')) gain -= 1;
+  let note = '';
+  if (hasTrait(p, 'festaiolo') && chance(0.3)) { gain -= 1; note = ' Ha saltato qualche allenamento per una festa.'; }
+  gain = Math.max(0, gain);
+  p.ovr = clamp(p.ovr + gain, 35, 99);
+  let potUp = 0;
+  if (p.age <= 25 && c.id >= 1 && chance(0.5)) { potUp = randi(1, 2); p.pot += potUp; }
+  if (p.age >= 29) p.campBoost = true;
+  capPot(p);
+  p.morale = clamp(p.morale + 5 + c.id * 2, 0, 100);
+  const txt = `${c.label} con ${lg}: ${gain ? `+${gain} di valutazione` : 'nessun miglioramento visibile'}${potUp ? `, potenziale +${potUp}` : ''}${p.age >= 29 ? ', il declino rallenterà' : ''}.${note}`;
+  addNews(`🏆 Camp di <b>${esc(p.name)}</b> con la leggenda ${esc(lg)}: ${esc(txt)}`, gain ? 'good' : '');
+  return { msg: txt, type: gain ? 'good' : 'info' };
+}
+
 function offseason() {
   const retiredNow = [];
   for (const p of Object.values(S.players)) {
     if (p.retired) continue;
     p.age++;
-    // sviluppo
-    let d;
-    if (p.age <= 24) d = (p.pot - p.ovr) * rand(0.12, 0.38);
-    else if (p.age <= 28) d = rand(-1, 2.5);
-    else if (p.age <= 31) d = rand(-3, 1);
-    else d = rand(-6, -1);
-    if (hasTrait(p, 'professionista') && p.age <= 30 && chance(0.6)) d += 1; // si allena più di tutti
-    if (hasTrait(p, 'festaiolo') && chance(0.3)) d -= 1;
-    p.ovr = clamp(Math.round(p.ovr + d), 35, 99);
-    p.pot = Math.max(p.pot, p.ovr);
-    if (p.age > 27) p.pot = Math.max(p.ovr, p.pot - 1);
+    // sviluppo: età, carattere, camp estivo
+    developPlayer(p);
+    if (isClient(p) && p.potNote === 'up') addNews(`🔥 ${esc(p.name)} vuole sempre migliorare: il suo potenziale è salito a ${p.pot}.`, 'good');
+    if (isClient(p) && p.potNote === 'down') addNews(`😴 ${esc(p.name)} si è accontentato: il suo potenziale è sceso a ${p.pot}.`, 'warn');
     if (p.team != null) p.career.seasons++;
     // ritiro
     const ret = (p.age >= 35 && chance(0.35 + (p.age - 35) * 0.2)) || (p.age >= 31 && p.ovr < 54 && chance(0.5)) ||
@@ -1540,6 +1620,7 @@ const UI = {
         ${offers ? `<button class="btn primary sm" onclick="UI.negotiation(${p.id})">Offerte (${offers})</button>` : ''}
         <button class="btn sm" onclick="UI.doContact(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>📞 Contatta</button>
         <button class="btn sm" onclick="UI.recModal(${p.id})">📣 Consiglia</button>
+        <button class="btn sm" onclick="UI.campModal(${p.id})" ${p.campSeason === S.season ? 'disabled' : ''}>🏆 Camp</button>
         <button class="btn sm" onclick="UI.player(${p.id})">Scheda</button>
       </div></div>`;
   },
@@ -1619,7 +1700,8 @@ const UI = {
   clientRow(p) {
     const t = teamOf(p), L = p.last, ng = nextGameTxt(p);
     let meta;
-    if (p.injury) meta = `🚑 Fermo ancora ${p.injury} sett.`;
+    if (p.injury) meta = `🚑 Fermo ancora ${p.injury} sett.${p.injDebt ? ` · forma −${p.injDebt}` : ''}`;
+    else if (p.injDebt) meta = `🩹 Sta tornando in forma (−${p.injDebt} di valutazione per qualche settimana)`;
     else if (p.school) { const pr = draftProjection(p); meta = `🎓 ${esc(p.school)} · proiezione Draft <b>#${pr}</b>${p.promise != null ? ` · 📣 promesso ai ${esc(S.teams[p.promise].name)}` : ''}`; }
     else if (!t) { const n = S.offers.filter(o => o.pid === p.id).length; meta = `🆓 Senza squadra${n ? ` · <b>${n} offert${n > 1 ? 'e' : 'a'}</b>` : ''}`; }
     else meta = `${ng ? `📅 Prossima: <b>${esc(ng)}</b> · ` : ''}🏆 ${teamRank(t.id)}ª in classifica (${t.w}-${t.l})`;
@@ -1627,7 +1709,7 @@ const UI = {
     return `<button class="pl" onclick="UI.player(${p.id})">
       ${avatarSVG(p, 52)}
       <span class="pl-main"><span class="pl-name"><b>${esc(p.name)}</b><span class="ti">${(p.traits || []).map(t => TRAITS[t].icon).join('')}</span><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span></span>
-        <span class="pl-sub">${p.pos} · ${p.age} anni${t ? ` · ${esc(t.name)} #${p.num}` : ''}${t && p.gp ? ` · ${p.gp} gare` : ''}</span>
+        <span class="pl-sub">${careerPhase(p).join(' ')} · ${p.pos} · ${p.age} anni${t ? ` · ${esc(t.name)} #${p.num}` : ''}${t && p.gp ? ` · ${p.gp} gare` : ''}</span>
         <span class="pl-meta">${meta}</span>${stats}</span>
       ${L && t ? `<span class="pl-last"><span class="grade ${gradeClass(L.grade)}">${L.grade}</span><small>ultima</small></span>` : ''}
     </button>`;
@@ -1727,6 +1809,16 @@ const UI = {
         <span class="rec-c ${c > .6 ? 'good' : c > .3 ? 'warn' : 'bad'}">${Math.round(c * 100)}%</span>
         <button class="btn sm primary" onclick="UI.doRecommend(${pid}, ${t.id})" ${done ? 'disabled' : ''}>Consiglia</button></div>`).join('')}</div>`);
   },
+  campModal(pid) {
+    const p = P(pid), lg = legendFor(p), done = p.campSeason === S.season;
+    this.openModal(`<h3>🏆 Camp con ${esc(lg)}</h3>
+      <p class="small">La leggenda ${esc(lg)} può allenare ${esc(p.name)} (${careerPhase(p).join(' ').toLowerCase()}, ${p.age} anni, OVR ${p.ovr}). I giovani migliorano di più, i veterani rallentano il declino. Contano anche il carattere e la voglia di lavorare.</p>
+      ${done ? '<p class="warn">Ha già fatto il camp in questa stagione.</p>' : ''}
+      <div class="rec-list">${CAMPS.map(c => { const [lo, hi] = campPreview(p, c); return `<div class="rec">
+        <span class="rec-t"><b>${c.label}</b><small>Miglioramento previsto: ${lo === hi ? `+${lo}` : `da +${lo} a +${hi}`} di valutazione${p.age <= 25 && c.id ? ' · può alzare il potenziale' : ''}</small></span>
+        <button class="btn sm primary" onclick="UI.doCamp(${pid}, ${c.id})" ${done || S.cash < c.cost * 1000 ? 'disabled' : ''}>${fmt$(c.cost * 1000)}</button></div>`; }).join('')}</div>`);
+  },
+  doCamp(pid, ci) { const r = legendCamp(pid, ci); save(); this.closeModal(); this.render(); toast(r.msg, r.type, r.type === 'good' ? 'Allenamento!' : undefined); },
   doRecommend(pid, tid) { const r = recommend(pid, tid); save(); this.closeModal(); this.render(); toast(r.msg, r.type, r.type === 'good' ? 'Ti hanno ascoltato!' : undefined); },
 
   /* ---------- Trattative ---------- */
@@ -1781,7 +1873,8 @@ const UI = {
     this.openModal(`
       <div class="pc-head">${avatarSVG(p, 72)}<div class="ovr ${this.ovrClass(p.ovr)}">${ex ? '' : '~'}${shownOvr(p)}</div>
         <div><div class="pc-name">${esc(p.name)} ${mine ? '<span class="tag fa">tuo cliente</span>' : ''}</div>
-        <div class="pc-sub">${POS_IT[p.pos]} · ${p.age} anni · potenziale ${ex ? '' : '~'}${shownPot(p)}</div></div></div>
+        <div class="pc-sub">${POS_IT[p.pos]} · ${p.age} anni · potenziale ${ex ? '' : '~'}${shownPot(p)}</div>
+        <div class="phase">${careerPhase(p).join(' ')}${p.injDebt ? ` · 🩹 forma −${p.injDebt}` : ''}</div></div></div>
       <div class="traits">${traitChips(p)}</div>
       <p class="story">${esc(storyOf(p))}</p>
       ${(p.traits || []).map(t => `<p class="small muted trait-desc">${TRAITS[t].icon} <b>${TRAITS[t].label}</b>: ${TRAITS[t].desc}</p>`).join('')}
@@ -1800,6 +1893,7 @@ const UI = {
       <div class="actions">
         ${mine ? `<button class="btn sm" onclick="UI.doContact(${p.id});UI.player(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>📞 Contatta</button>
           <button class="btn sm" onclick="UI.recModal(${p.id})">📣 Consiglia a una squadra</button>
+          <button class="btn sm" onclick="UI.campModal(${p.id})" ${p.campSeason === S.season ? 'disabled' : ''}>🏆 Camp con una leggenda</button>
           <button class="btn bad sm" onclick="UI.release(${p.id})">Interrompi rapporto</button>`
           : `<button class="btn primary sm" onclick="UI.pitchModal(${p.id})">${S.talks[p.id] ? 'Riprendi la trattativa' : 'Proponi agenzia'}</button>
           ${p.school ? `<button class="btn sm" onclick="UI.recModal(${p.id})">📣 Consiglia a una squadra</button>` : ''}
@@ -1899,7 +1993,7 @@ const Tutorial = {
     { t: 't-pls', h: 'I tuoi giocatori', x: 'Per ognuno vedi la <b>prossima partita</b>, la posizione in classifica della squadra, le medie di punti, rimbalzi e assist e il <b>voto dell\'ultima gara</b>. Tocca un giocatore per aprire la sua scheda: lì trovi carattere, storia e il pulsante <b>📣 Consiglia</b>.' },
     { t: null, h: 'Il carattere', x: 'Ogni giocatore ha 1 o 2 tratti e una sua storia. Il carattere decide che imprevisti gli capitano: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Cambia anche le regole: un 🤝 leale è difficile da portarti via, un 💰 attaccato ai soldi chiede di più.' },
     { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
-    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì tratti stipendio e anni, ma se chiedi troppo il GM perde la pazienza. Usa <b>📞 Contatta</b> per tenerli contenti e <b>📣 Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
+    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì tratti stipendio e anni, ma se chiedi troppo il GM perde la pazienza. Usa <b>📞 Contatta</b> per tenerli contenti, <b>🏆 Camp</b> per farli allenare con una leggenda e <b>📣 Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
     { t: 'tab-market', h: 'Mercato', x: 'Qui trovi nuovi clienti: <b>prospetti</b> del college, <b>free agent</b> e giocatori di altre agenzie. Con <b>🔭 Osserva</b> scopri il loro potenziale, con <b>🤝 Coltiva</b> crei un legame prima del Draft. <b>Proponi</b> chiede un incontro: se accetta inizia una vera trattativa. Tu offri commissione e bonus alla firma, lui fa una controfferta e ha una pazienza di 2-5 🏀.' },
     { t: null, h: 'Il Draft', x: 'Puoi <b>consigliare</b> un prospetto a una squadra: se ti danno retta, lo sceglieranno al Draft se è ancora libero al loro turno. Più è buono il rapporto con la squadra, più ti ascoltano. E un ragazzo a cui sei molto legato può sceglierti come agente da solo, prima del Draft.' },
     { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre col tuo rapporto con ognuna, i rapporti con gli sponsor, i migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
@@ -1910,7 +2004,7 @@ const Tutorial = {
     if (!S) return;
     UI.closeModal();
     if (UI.tab !== 'home') { UI.tab = 'home'; UI.render(); }
-    this.i = 0; this.build(); this.show();
+    this.i = 0; this.build(); document.documentElement.classList.add('tut-on'); this.show();
   },
   build() {
     if (this.el) return;
@@ -1920,6 +2014,10 @@ const Tutorial = {
       <div class="coach" id="tut-coach">${COACH_SVG}<div class="bubble" id="tut-bubble" role="dialog" aria-live="polite"></div></div>`;
     document.body.appendChild(el);
     this.el = el;
+    // blocca lo scorrimento col dito o con la rotella mentre il tutorial è aperto
+    const block = e => { if (!this.el.hidden) e.preventDefault(); };
+    document.addEventListener('touchmove', block, { passive: false });
+    document.addEventListener('wheel', block, { passive: false });
     window.addEventListener('resize', () => { if (!this.el.hidden) this.place(); });
   },
   show() {
@@ -1955,10 +2053,10 @@ const Tutorial = {
     coach.className = 'coach ' + (innerHeight - (r.top + h) >= bh + 24 || above < bh + 24 ? 'bottom' : 'top');
   },
   go(d) { this.i += d; if (this.i >= this.steps.length) return this.end(); this.i = Math.max(0, this.i); this.show(); },
-  end() { if (this.el) this.el.hidden = true; if (S) { S.tutorialDone = true; save(); } },
+  end() { document.documentElement.classList.remove('tut-on'); if (this.el) this.el.hidden = true; if (S) { S.tutorialDone = true; save(); } },
 };
 
 load();
-if (S) { S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();
