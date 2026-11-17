@@ -1090,7 +1090,7 @@ function advance() {
     } else if (UI.pendingToast) toast(...UI.pendingToast);
     UI.pendingToast = null;
   };
-  if (played) UI.showWeek(after); else after();
+  if (played && S.showGames !== false) UI.showWeek(after); else after();
 }
 
 function allStar() {
@@ -1331,6 +1331,7 @@ const UI = {
       <main>${this['v_' + this.tab]()}</main>`;
   },
   go(t) { this.tab = t; this.render(); window.scrollTo(0, 0); },
+  setGames(on) { S.showGames = on; save(); toast(on ? 'Dopo ogni settimana vedrai i risultati delle partite.' : 'I risultati delle partite non verranno più mostrati.', 'info', on ? 'Risultati accesi' : 'Risultati spenti'); },
   focusEvents(blocked) {
     this.closeModal();
     if (this.tab !== 'home') { this.tab = 'home'; this.render(); }
@@ -1417,6 +1418,13 @@ const UI = {
 
       ${S.history.length ? `<div class="sec"><h2>📊 Storico stagioni</h2></div><div class="tbl-wrap"><table><tr><th>Stagione</th><th class="num">Entrate</th><th class="num">Spese</th><th class="num">Clienti</th><th class="num">Reputazione</th></tr>
         ${S.history.map(h => `<tr><td>${h.season}</td><td class="num good">${fmt$(h.income)}</td><td class="num bad">${fmt$(h.expense)}</td><td class="num">${h.clients}</td><td class="num">${h.rep.toFixed(1)}</td></tr>`).join('')}</table></div>` : ''}
+      <div class="sec"><h2>⚙️ Impostazioni</h2></div>
+      <div class="settings">
+        <label class="switch-row" for="set-games">
+          <span><b>Risultati delle partite</b><small>Dopo ogni settimana mostra le partite dei tuoi giocatori, con statistiche e voto.</small></span>
+          <input type="checkbox" id="set-games" class="switch" ${S.showGames !== false ? 'checked' : ''} onchange="UI.setGames(this.checked)">
+        </label>
+      </div>
       <p style="margin-top:28px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="Tutorial.start()">❓ Rivedi il tutorial</button><button class="btn bad sm" onclick="UI.reset()">Ricomincia da capo</button></p>`;
   },
   eventCard(e) {
@@ -1581,11 +1589,13 @@ const UI = {
           <span class="wr-line">${L.pts} pt · ${L.reb} rb · ${L.ast} as</span></div>
           <span class="grade big ${gradeClass(L.grade)}">${L.grade}</span></div>`;
       }).join('')}</div>
-      <button class="btn primary wr-go" id="wr-go">Continua ▶</button></div>`;
+      <div class="wr-foot"><button class="btn primary wr-go" id="wr-go">Continua ▶</button>
+      <button class="wr-off" id="wr-off">Non mostrare più i risultati</button></div></div>`;
     box.hidden = false;
     let closed = false;
     const close = () => { if (closed) return; closed = true; box.hidden = true; clearTimeout(this.wrTimer); after && after(); };
     document.getElementById('wr-go').onclick = close;
+    document.getElementById('wr-off').onclick = () => { S.showGames = false; save(); close(); this.render(); toast('Non vedrai più i risultati dopo ogni settimana. Puoi riattivarli in Home, sezione Impostazioni.', 'info', 'Risultati spenti'); };
     box.onclick = e => { if (e.target === box) close(); };
     this.wrTimer = setTimeout(close, 6000 + rows.length * 600);
   },
