@@ -182,6 +182,7 @@ function newGame(agencyName, agentName) {
   addNews('📋 È iniziata la Free Agency: sfoglia il <b>Mercato</b> per firmare nuovi assistiti.');
   makeOffersForClientFAs();
   newChallenges();
+  recInit();
   save();
 }
 
@@ -360,10 +361,11 @@ function simWeekGames() {
         const blow = Math.abs(g2.us - g2.them) >= 18;
         const mins = clamp(Math.round(m * (1 + gauss() * 0.12) * (blow ? (i < 5 ? 0.85 : 1.6) : 1) + (chance(0.04) ? 5 : 0)), 0, 48);
         if (!mins) continue;
+        if (chance(p.age >= 31 ? 0.12 : 0.07)) continue; // riposo o acciacco: salta la partita
         const fg = mins / 36;
         let form = 1 + gauss() * 0.22;
         if (i < 3 && chance(0.012)) form *= rand(1.4, 1.9); // serata di grazia: può nascere un record
-        const pts = Math.max(0, Math.round(q * 0.56 * fg * form));
+        const pts = Math.max(0, Math.round(q * 0.53 * fg * form));
         const reb = Math.max(0, Math.round(q * rebK * fg * (1 + gauss() * .25)));
         const ast = Math.max(0, Math.round(q * astK * fg * (1 + gauss() * .25)));
         p.gp++; p.min = (p.min || 0) + mins; p.pts += pts; p.reb += reb; p.ast += ast;
@@ -1331,52 +1333,77 @@ function bodyTxt(p) {
 }
 
 /* ================================================================== */
-/* Record della lega                                                   */
+/* Record della lega: partono da quelli reali della NBA                */
 /* ================================================================== */
-// Le leggende storiche (parodia) sono il traguardo: i record "della lega" partono dal 2026 e i tuoi giocatori li possono battere
-const HISTORIC = {
-  game: { pts: [100, 'Wilt Chamberlano', 1962], reb: [55, 'Wilt Chamberlano', 1960], ast: [30, 'Scott Skilesi', 1990] },
-  season: { ppg: [50.4, 'Wilt Chamberlano', 1962], rpg: [27.2, 'Wilt Chamberlano', 1961], apg: [14.5, 'John Stocktonn', 1990] },
-  career: { pts: [38387, 'Kareem Abdul-Jabbarr', 1989], reb: [23924, 'Wilt Chamberlano', 1973], ast: [15806, 'John Stocktonn', 2003],
-    gp: [1611, 'Robert Parishh', 1997], titles: [11, 'Bill Russello', 1969], mvp: [6, 'Kareem Abdul-Jabbarr', 1980], allstar: [19, 'LeBonno James', 2023] },
-};
 const REC_LABEL = { pts: 'Punti', reb: 'Rimbalzi', ast: 'Assist', ppg: 'Punti a partita', rpg: 'Rimbalzi a partita', apg: 'Assist a partita',
   gp: 'Partite giocate', titles: 'Titoli', mvp: 'MVP', allstar: 'All-Star' };
-function recInit() { S.records = S.records || { game: {}, season: {}, retired: [] }; }
-// record di una singola partita (tutti i giocatori, ogni partita)
+const clone = o => JSON.parse(JSON.stringify(o));
+// Prepara i record (una volta sola): record reali, leggende ritirate, numeri di carriera delle star in attività
+function recInit() {
+  if (!S.records) S.records = { game: {}, season: {}, retired: [] };
+  const R = S.records;
+  if (R.real) return;
+  // salvataggi precedenti: quello che era stato registrato diventa "il migliore dal 2026"
+  R.era = { game: R.game || {}, season: R.season || {} };
+  R.game = clone(REAL_RECORDS.game); R.season = clone(REAL_RECORDS.season);
+  for (const sec of ['game', 'season']) for (const [k, r] of Object.entries(R.era[sec])) if (r && r.v > R[sec][k].v) R[sec][k] = clone(r);
+  R.retired = [...clone(REAL_LEGENDS), ...(R.retired || [])];
+  for (const p of Object.values(S.players)) {
+    if (!p.star || p.cgp) continue;
+    const real = REAL_ACTIVE[p.name] || {};
+    if (real.pts) { p.cpts = real.pts; p.creb = real.reb; p.cast = real.ast; p.cgp = real.gp; }
+    else { // stima coerente con età e livello
+      const seasons = clamp(p.age - 20, 0, 22), gp = Math.round(seasons * 63), ppg = Math.max(6, (p.ovr - 45) * 0.52);
+      p.cgp = gp; p.cpts = Math.round(gp * ppg);
+      p.creb = Math.round(gp * ppg * ({ PG: .18, SG: .2, SF: .3, PF: .42, C: .5 }[p.pos]));
+      p.cast = Math.round(gp * ppg * ({ PG: .35, SG: .2, SF: .17, PF: .12, C: .1 }[p.pos]));
+    }
+    for (const k of ['titles', 'mvp', 'allstar']) if (real[k]) p.career[k] = Math.max(p.career[k] || 0, real[k]);
+  }
+  R.real = true;
+}
+// record di una singola partita: di sempre e dal 2026
 function recGame(p, team, pts, reb, ast) {
-  const G = S.records.game;
+  const R = S.records;
+  p.hi = p.hi || {};
   for (const [k, v] of [['pts', pts], ['reb', reb], ['ast', ast]]) {
-    p.hi = p.hi || {};
     if (v > (p.hi[k] || 0)) p.hi[k] = v; // il suo massimo in carriera
-    if (!G[k] || v > G[k].v) {
-      const had = !!G[k];
-      G[k] = { v, name: p.name, pid: p.id, team: team.abbr, season: seasonLabel() };
-      if (had && v >= (k === 'pts' ? 45 : k === 'reb' ? 20 : 15)) recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una partita`);
+    const rec = { v, name: p.name, pid: p.id, team: team.abbr, season: seasonLabel() };
+    if (!R.era.game[k] || v > R.era.game[k].v) {
+      const had = !!R.era.game[k];
+      R.era.game[k] = rec;
+      if (v > R.game[k].v) { R.game[k] = clone(rec); recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una partita`, true); }
+      else if (had && v >= (k === 'pts' ? 50 : k === 'reb' ? 22 : 17)) recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una partita`, false);
     }
   }
 }
 // record stagionali: a fine stagione regolare, minimo 40 partite
 function recSeason() {
   recInit();
-  const Sx = S.records.season;
+  const R = S.records;
   for (const p of Object.values(S.players)) {
     if (p.retired || p.team == null || p.gp < 40) continue;
     for (const [k, base] of [['ppg', 'pts'], ['rpg', 'reb'], ['apg', 'ast']]) {
-      const v = r1(p[base] / p.gp);
-      if (!Sx[k] || v > Sx[k].v) { const had = !!Sx[k]; Sx[k] = { v, name: p.name, pid: p.id, team: teamOf(p).abbr, season: seasonLabel() }; if (had) recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una stagione`); }
+      const v = r1(p[base] / p.gp), rec = { v, name: p.name, pid: p.id, team: teamOf(p).abbr, season: seasonLabel() };
+      if (!R.era.season[k] || v > R.era.season[k].v) {
+        const had = !!R.era.season[k];
+        R.era.season[k] = rec;
+        if (v > R.season[k].v) { R.season[k] = clone(rec); recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una stagione`, true); }
+        else if (had) recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una stagione`, false);
+      }
     }
   }
 }
-function recNews(p, what) {
-  addNews(`📜 <b>Nuovo record della lega!</b> ${esc(p.name)}: ${esc(what)}.`, isClient(p) ? 'gold' : '');
-  if (isClient(p)) { const m = [`${p.name}: ${what}`, 'goal', 'Record!']; if (UI.advancing) UI.goalQueue.push(m); else toast(...m); }
+function recNews(p, what, allTime) {
+  addNews(allTime ? `📜 <b>RECORD DI SEMPRE!</b> ${esc(p.name)}: ${esc(what)}. Battuto un primato della storia NBA!`
+    : `📜 Migliore prestazione dal 2026: ${esc(p.name)}, ${esc(what)}.`, isClient(p) || allTime ? 'gold' : '');
+  if (isClient(p)) { const m = [`${p.name}: ${what}${allTime ? ' · record di sempre!' : ' · il migliore dal 2026'}`, 'goal', allTime ? 'Record storico!' : 'Record!']; if (UI.advancing) UI.goalQueue.push(m); else toast(...m); }
 }
 const careerStat = (p, k) => k === 'titles' || k === 'mvp' || k === 'allstar' ? (p.career ? p.career[k] : p[k]) || 0 : k === 'gp' ? p.cgp || 0 : p['c' + k] || 0;
-// classifica di carriera: giocatori in attività + leggende della tua era già ritirate
+// classifica di sempre: giocatori in attività + leggende ritirate (reali e della tua era)
 function careerBoard(k, n = 10) {
   recInit();
-  const act = Object.values(S.players).filter(p => !p.retired && (p.cgp || 0) > 0).map(p => ({ name: p.name, pid: p.id, v: careerStat(p, k), active: true }));
+  const act = Object.values(S.players).filter(p => !p.retired && (careerStat(p, k) > 0)).map(p => ({ name: p.name, pid: p.id, v: careerStat(p, k), active: true }));
   const ret = S.records.retired.map(r => ({ name: r.name, v: r[k] || 0, active: false, until: r.until }));
   return [...act, ...ret].filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, n);
 }
@@ -1390,8 +1417,7 @@ function recRetire(p) {
   const worthy = keys.some(k => { const b = careerBoard(k, 25); return snap[k] > 0 && (b.length < 25 || snap[k] > b[b.length - 1].v); });
   if (!worthy) return;
   S.records.retired.push(snap);
-  // teniamo la storia leggera: solo chi è nei primi 25 di almeno una classifica
-  if (S.records.retired.length > 80) {
+  if (S.records.retired.length > 90) {
     const keep = new Set();
     for (const k of keys) [...S.records.retired].sort((a, b) => (b[k] || 0) - (a[k] || 0)).slice(0, 25).forEach(r => keep.add(r));
     S.records.retired = S.records.retired.filter(r => keep.has(r));
@@ -2150,9 +2176,9 @@ const UI = {
       <div class="wr-title">Risultati · settimana ${S.week - 1 || REG_WEEKS}</div>
       ${best && best.g.grade[0] === 'A' ? `<div class="wr-top">🔥 Partita top: <b>${esc(best.p.name)}</b> ${best.g.pts} pt · ${best.g.reb} rb · ${best.g.ast} as <span class="grade ${gradeClass(best.g.grade)}">${best.g.grade}</span></div>` : ''}
       <div class="wr-list">${rows.map(p => {
-        const L = p.week[3], w = p.week.filter(g => g.win).length;
+        const L = p.week[p.week.length - 1], w = p.week.filter(g => g.win).length, n = p.week.length;
         return `<div class="wr-row ${L.grade[0] === 'A' ? 'top' : ''}">${avatarSVG(p, 40)}
-          <div class="wr-info"><b>${esc(p.name)}</b><span>${L.win ? '✅ V' : '❌ P'} ${L.us}-${L.them} ${L.home ? 'vs' : '@'} ${esc(S.teams[L.opp].name)} · settimana ${w}-${4 - w}</span>
+          <div class="wr-info"><b>${esc(p.name)}</b><span>${L.win ? '✅ V' : '❌ P'} ${L.us}-${L.them} ${L.home ? 'vs' : '@'} ${esc(S.teams[L.opp].name)} · settimana ${w}-${n - w}${n < 4 ? ` (${4 - n} saltat${4 - n > 1 ? 'e' : 'a'})` : ''}</span>
           <span class="wr-line">${L.min != null ? `${L.min}' · ` : ''}${L.pts} pt · ${L.reb} rb · ${L.ast} as</span></div>
           <span class="grade big ${gradeClass(L.grade)}">${L.grade}</span></div>`;
       }).join('')}</div>
@@ -2389,43 +2415,39 @@ const UI = {
     recInit();
     const R = S.records, tab = this.recTab;
     const mine = clients().filter(p => !p.retired);
-    const who = r => r ? `<b>${esc(r.name)}</b>${S.players[r.pid] && isClient(S.players[r.pid]) ? ' <span class="tag fa">tuo</span>' : ''}<small>${esc(r.team || '')} · ${esc(r.season || '')}</small>` : '<small class="muted">ancora nessuno</small>';
-    const hist = h => `<b>${h[0].toLocaleString('it-IT')}</b><small>${esc(h[1])}, ${h[2]}</small>`;
-    const best = (vals) => { const b = vals.filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0]; return b ? `<b>${b.v.toLocaleString('it-IT')}</b><small>${esc(b.name)}</small>` : '<small class="muted">—</small>'; };
+    const tuo = pid => pid != null && S.players[pid] && isClient(S.players[pid]) ? ' <span class="tag fa">tuo</span>' : '';
     let body = '';
     if (tab === 'game' || tab === 'season') {
       const keys = tab === 'game' ? ['pts', 'reb', 'ast'] : ['ppg', 'rpg', 'apg'];
-      const src = tab === 'game' ? R.game : R.season;
       body = `<div class="grid">${keys.map(k => {
-        const r = src[k], h = HISTORIC[tab][k];
+        const r = R[tab][k], era = R.era[tab][k];
         const myv = mine.map(p => ({ name: p.name, v: tab === 'game' ? ((p.hi || {})[k] || 0) : (p.gp >= 10 ? r1(p[{ ppg: 'pts', rpg: 'reb', apg: 'ast' }[k]] / p.gp) : 0) })).sort((a, b) => b.v - a.v)[0];
-        const pct = myv && r ? Math.min(100, Math.round(myv.v / r.v * 100)) : 0;
+        const pct = myv ? Math.min(100, Math.round(myv.v / r.v * 100)) : 0;
         return `<div class="card rec-card"><h3>${REC_LABEL[k]} ${tab === 'game' ? 'in una partita' : 'in una stagione'}</h3>
-          <div class="rec-main">${r ? `<b class="gold">${r.v}</b><span>${who(r)}</span>` : '<span class="muted small">Ancora nessuno: la storia comincia ora.</span>'}</div>
-          <p class="small muted">Leggenda storica: <b>${h[0]}</b> di ${esc(h[1])} (${h[2]})</p>
-          ${myv && myv.v ? `<div class="small">Il tuo migliore: <b>${esc(myv.name)}</b>, ${myv.v} <span class="muted">(${pct}% del record della lega)</span><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>` : ''}</div>`;
+          <div class="rec-main"><b class="gold">${r.v}</b><span><b>${esc(r.name)}</b>${tuo(r.pid)}<small>${esc(r.team || '')} · ${esc(r.season)}</small></span></div>
+          <p class="small muted">Migliore dal 2026: ${era ? `<b>${era.v}</b>, ${esc(era.name)}${tuo(era.pid)} (${esc(era.season)})` : 'ancora nessuno'}</p>
+          ${myv && myv.v ? `<div class="small">Il tuo migliore: <b>${esc(myv.name)}</b>, ${myv.v} <span class="muted">(${pct}% del record di sempre)</span><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>` : ''}</div>`;
       }).join('')}</div>
         <p class="small muted">${tab === 'game' ? '"Il tuo migliore" è il massimo in carriera di un tuo cliente in una partita.' : 'Per la stagione servono almeno 40 partite; "il tuo migliore" è la media attuale di un tuo cliente (almeno 10 gare).'}</p>`;
     } else {
       const keys = tab === 'career' ? ['pts', 'reb', 'ast', 'gp'] : ['titles', 'mvp', 'allstar'];
-      body = keys.map(k => {
-        const board = careerBoard(k), h = HISTORIC.career[k];
+      body = `<div class="grid">${keys.map(k => {
+        const board = careerBoard(k), top = board[0];
         const myBest = mine.map(p => ({ name: p.name, v: careerStat(p, k) })).sort((a, b) => b.v - a.v)[0];
-        const pct = myBest && h ? Math.min(100, Math.round(myBest.v / h[0] * 100)) : 0;
+        const pct = myBest && top ? Math.min(100, Math.round(myBest.v / top.v * 100)) : 0;
         return `<div class="card rec-card"><h3>${REC_LABEL[k]} in carriera</h3>
-          <p class="small muted">Leggenda storica: <b>${h[0].toLocaleString('it-IT')}</b> di ${esc(h[1])}</p>
-          ${myBest && myBest.v ? `<div class="small">Il tuo migliore: <b>${esc(myBest.name)}</b>, ${myBest.v.toLocaleString('it-IT')} <span class="muted">(${pct}% del record storico)</span><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>` : ''}
+          ${myBest && myBest.v ? `<div class="small">Il tuo migliore: <b>${esc(myBest.name)}</b>, ${myBest.v.toLocaleString('it-IT')} <span class="muted">(${pct}% del record)</span><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>` : ''}
           <ol class="rec-list">${board.map(x => { const pl = x.pid != null ? S.players[x.pid] : null, cl = pl && isClient(pl);
-            return `<li class="${cl ? 'mine' : ''}"><span>${esc(x.name)}${cl ? ' <span class="tag fa">tuo</span>' : ''}${x.active ? '' : ` <small class="muted">ritirato ${esc(x.until || '')}</small>`}</span><b>${x.v.toLocaleString('it-IT')}</b></li>`; }).join('') || '<li class="muted">Ancora nessuno: la storia comincia ora.</li>'}</ol></div>`;
-      }).join('');
-      body = `<div class="grid">${body}</div>`;
+            return `<li class="${cl ? 'mine' : ''}"><span>${esc(x.name)}${cl ? ' <span class="tag fa">tuo</span>' : ''}${x.active ? ' <small class="good">in attività</small>' : ` <small class="muted">ritirato ${esc(x.until || '')}</small>`}</span><b>${x.v.toLocaleString('it-IT')}</b></li>`; }).join('')}</ol></div>`;
+      }).join('')}</div>`;
     }
     return `<h2>📜 Record della lega</h2>
-      <p class="small muted">I record contano dalla stagione 2026-27, quando inizia la tua carriera. Accanto vedi le leggende storiche: battere loro è roba da Hall of Fame.</p>
+      <p class="small muted">Sono i record veri della storia NBA, con i nomi del gioco. Le classifiche di carriera mettono insieme le leggende del passato e chi gioca oggi: i tuoi clienti possono scalarle stagione dopo stagione.</p>
       <div class="filters"><div class="seg">${[['game', 'Partita'], ['season', 'Stagione'], ['career', 'Carriera'], ['awards', 'Premi']].map(([k, l]) =>
         `<button class="${tab === k ? 'on' : ''}" onclick="UI.recTab='${k}';UI.tab='league';UI.render();document.getElementById('t-rec').scrollIntoView()">${l}</button>`).join('')}</div></div>
       ${body}`;
   },
+
 
 
   /* ---------- Staff ---------- */
