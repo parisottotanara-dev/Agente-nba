@@ -1406,7 +1406,7 @@ const UI = {
       }).join('')}</div>` : ''}
 
       <div class="sec"><h2>⭐ I tuoi giocatori</h2><a href="#" onclick="UI.go('clients');return false">Schede complete</a></div>
-      <div class="pls">${[...cl].sort((a, b) => (b.team != null) - (a.team != null) || b.salary - a.salary || b.ovr - a.ovr).map(p => this.clientRow(p)).join('')}
+      <div class="pls" id="t-pls">${[...cl].sort((a, b) => (b.team != null) - (a.team != null) || b.salary - a.salary || b.ovr - a.ovr).map(p => this.clientRow(p)).join('')}
         ${cl.length < capacity() ? `<button class="pl add" onclick="UI.go('market')">＋ Trova un nuovo cliente nel Mercato</button>` : ''}</div>
 
       <div class="sec"><h2>📰 Dalla lega</h2></div>
@@ -1820,17 +1820,20 @@ const Tutorial = {
   i: 0, el: null,
   steps: [
     { t: null, h: 'Benvenuto, agente!', x: 'Sono <b>Coach Gigi</b> e ti spiego come funziona. Sei un procuratore: trovi giocatori, li porti nella tua agenzia e guadagni una percentuale sui loro <b>stipendi</b> (1-4%) e sui loro <b>sponsor</b> (15%).' },
-    { t: 't-adv', h: 'Avanza settimana', x: 'Ogni tocco fa passare una settimana: si giocano le partite, incassi le commissioni, paghi lo staff e succedono gli imprevisti. La stagione è: Free Agency → stagione regolare → playoff → Draft.' },
-    { t: 't-cash', h: 'La tua cassa', x: 'Qui vedi i soldi e quanto guadagni o perdi in media a settimana. Ci paghi lo staff e le presentazioni ai giocatori. <b>Se resti in rosso per 4 settimane perdi la licenza!</b>' },
-    { t: 't-rep', h: 'La reputazione', x: 'Più è alta, più è facile convincere i campioni a firmare con te. Sale con i contratti ricchi, i premi e le scelte azzeccate; scende con figuracce e clienti persi.' },
+    { t: 't-adv', h: 'Avanza settimana', x: 'Ogni tocco fa passare una settimana: si giocano 4 partite, incassi le commissioni e paghi lo staff. Poi vedi i <b>risultati</b> dei tuoi giocatori con un voto da A+ a F. Se il pulsante diventa <b>giallo</b>, prima devi decidere un imprevisto. La stagione è: Free Agency → stagione regolare → playoff → Draft.' },
+    { t: 't-cash', h: 'La tua cassa', x: 'Qui vedi i soldi e quanto guadagni o perdi in media a settimana. Ci paghi lo staff, gli incontri con i giocatori e i bonus alla firma. <b>Se resti in rosso per 4 settimane perdi la licenza!</b>' },
+    { t: 't-rep', h: 'La reputazione', x: 'Più è alta, più i campioni accettano di incontrarti. Sale con i contratti ricchi, i premi e le scelte azzeccate; scende con figuracce e clienti persi.' },
     { t: 't-cl', h: 'I posti in agenzia', x: 'Puoi seguire un numero limitato di clienti. Per averne di più, amplia gli <b>Uffici</b> nella scheda Staff.' },
-    { t: 't-ev', h: 'Gli imprevisti', x: 'Spesso succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede e con che probabilità. <b>Devi decidere prima di avanzare.</b> Alcune scelte cambiano anche l\'aspetto del giocatore!' },
-    { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, ti pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
-    { t: 'tab-clients', h: 'Clienti', x: 'Qui ci sono le schede dei tuoi assistiti: contratto, morale, statistiche. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì negozi stipendio e anni. Chiedi troppo e il GM perde la pazienza. Usa <b>📞 Contatta</b> ogni settimana per tenerli contenti. Ogni giocatore ha un <b>carattere</b> (festaiolo, gentile, aggressivo…) che decide che tipo di imprevisti gli capitano.' },
-    { t: 'tab-market', h: 'Mercato', x: 'Qui trovi i nuovi clienti: <b>prospetti</b> del college (vanno al Draft), <b>free agent</b> (senza squadra) e giocatori di altre agenzie. Usa 🔭 per osservare un prospetto, 🤝 per <b>coltivare un legame</b> prima del Draft e <b>Proponi</b> per convincerlo: una commissione più bassa lo convince più facilmente.' },
-    { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre, migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
-    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Qui puoi anche assumere un <b>informatore</b>: all\'inizio è scarso, ma ti passa soffiate sui prospetti del prossimo Draft. Ogni livello aumenta le spese settimanali.' },
-    { t: 't-help', h: 'Tocca a te!', x: 'Puoi rivedere questo tutorial quando vuoi dal pulsante <b>?</b>. Primo consiglio: vai nel <b>Mercato</b>, firma un free agent e chiudi la sua trattativa. In bocca al lupo!' },
+    { t: 't-ev', h: 'Gli imprevisti', x: 'Ogni tanto succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede e con che probabilità. Alcune scelte cambiano anche l\'aspetto del giocatore. Più raramente arriva un <b>⚡ colpo di scena</b> che può cambiare una carriera, in bene o in male.' },
+    { t: 't-pls', h: 'I tuoi giocatori', x: 'Per ognuno vedi la <b>prossima partita</b>, la posizione in classifica della squadra, le medie di punti, rimbalzi e assist e il <b>voto dell\'ultima gara</b>. Tocca un giocatore per aprire la sua scheda: lì trovi carattere, storia e il pulsante <b>📣 Consiglia</b>.' },
+    { t: null, h: 'Il carattere', x: 'Ogni giocatore ha 1 o 2 tratti e una sua storia. Il carattere decide che imprevisti gli capitano: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Cambia anche le regole: un 🤝 leale è difficile da portarti via, un 💰 attaccato ai soldi chiede di più.' },
+    { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
+    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: lì tratti stipendio e anni, ma se chiedi troppo il GM perde la pazienza. Usa <b>📞 Contatta</b> per tenerli contenti e <b>📣 Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
+    { t: 'tab-market', h: 'Mercato', x: 'Qui trovi nuovi clienti: <b>prospetti</b> del college, <b>free agent</b> e giocatori di altre agenzie. Con <b>🔭 Osserva</b> scopri il loro potenziale, con <b>🤝 Coltiva</b> crei un legame prima del Draft. <b>Proponi</b> chiede un incontro: se accetta inizia una vera trattativa. Tu offri commissione e bonus alla firma, lui fa una controfferta e ha una pazienza di 2-5 🏀.' },
+    { t: null, h: 'Il Draft', x: 'Puoi <b>consigliare</b> un prospetto a una squadra: se ti danno retta, lo sceglieranno al Draft se è ancora libero al loro turno. Più è buono il rapporto con la squadra, più ti ascoltano. E un ragazzo a cui sei molto legato può sceglierti come agente da solo, prima del Draft.' },
+    { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre col tuo rapporto con ognuna, i rapporti con gli sponsor, i migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
+    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Qui puoi anche assumere un <b>🕵️ informatore</b>: all\'inizio è scarso e a volte sbaglia, ma ti passa soffiate sui prospetti del prossimo Draft. Ogni livello aumenta le spese settimanali.' },
+    { t: 't-help', h: 'Tocca a te!', x: 'Puoi rivedere questo tutorial quando vuoi dal pulsante <b>?</b>. Primo consiglio: vai nel <b>Mercato</b>, chiedi un incontro a un free agent e chiudi la trattativa. In bocca al lupo!' },
   ],
   start() {
     if (!S) return;
