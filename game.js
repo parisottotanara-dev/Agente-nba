@@ -1022,6 +1022,7 @@ function advance() {
     return;
   }
   S.turn++;
+  UI.advancing = true; UI.goalQueue = [];
   let played = false;
   spend(weeklyCost());
   S.rep = r1(S.rep * 0.997); // la fama va mantenuta
@@ -1080,8 +1081,13 @@ function advance() {
 
   checkGoals();
   save(); UI.render();
-  if (S.over) return UI.gameOver();
+  if (S.over) { UI.advancing = false; return UI.gameOver(); }
   const after = () => {
+    UI.advancing = false;
+    const goals = UI.goalQueue || []; UI.goalQueue = [];
+    const busy = S.inbox.length || UI.pendingToast;
+    // gli obiettivi arrivano subito dopo l'avviso degli imprevisti, uno alla volta
+    goals.forEach((a, i) => setTimeout(() => toast(...a), (busy ? 4400 : 0) + i * 4000));
     if (S.inbox.length) {
       UI.focusEvents(false);
       const rare = S.inbox.find(e => e.rare);
@@ -1274,12 +1280,54 @@ const GOALS = [
   ['rich', 'Patrimonio di $10M'],
   ['legend', 'Reputazione 100: agente leggendario'],
 ];
+// Ricompense degli obiettivi: più è difficile, più si vince
+const GOAL_REWARDS = {
+  five: { cash: 50 },
+  sponsor: { cash: 40, brandRel: 5 },
+  allstar: { cash: 100, rep: 2 },
+  top5: { cash: 100, rep: 2, teamRel: 5 },
+  bigdeal: { cash: 250, rep: 1 },
+  million: { cash: 300, staff: 'informer' },
+  ring: { cash: 500, rep: 5 },
+  mvp: { cash: 750, rep: 5 },
+  rep50: { cash: 200, staff: 'office' },
+  rich: { rep: 3, staff: 'marketing' },
+  legend: { cash: 1000, title: true },
+};
+function rewardText(r) {
+  const o = [];
+  if (r.cash) o.push(fmt$(r.cash * 1000));
+  if (r.rep) o.push(`+${r.rep} reputazione`);
+  if (r.teamRel) o.push(`+${r.teamRel} rapporto con tutte le squadre`);
+  if (r.brandRel) o.push(`+${r.brandRel} rapporto con tutti gli sponsor`);
+  if (r.staff) o.push(`${STAFF[r.staff].icon} ${STAFF[r.staff].name} +1 livello gratis`);
+  if (r.title) o.push('🏆 titolo di Agente leggendario');
+  return o.join(' · ');
+}
+function giveReward(k) {
+  const r = GOAL_REWARDS[k]; if (!r || (S.goalRewards || {})[k]) return '';
+  S.goalRewards = S.goalRewards || {};
+  S.goalRewards[k] = true;
+  if (r.cash) earn(r.cash * 1000);
+  if (r.rep) changeRep(r.rep);
+  if (r.teamRel) for (const t of S.teams) changeTeamRel(t.id, r.teamRel);
+  if (r.brandRel) for (const b of BRANDS) changeBrandRel(b, r.brandRel);
+  let txt = rewardText(r);
+  if (r.staff) {
+    if ((S.staff[r.staff] || 0) < 5) S.staff[r.staff] = (S.staff[r.staff] || 0) + 1;
+    else { earn(150000); txt = txt.replace(/[^·]*livello gratis/, ' $150k (staff già al massimo)'); }
+  }
+  if (r.title) S.legend = true;
+  return txt;
+}
 function checkGoal(k, cond) {
   if (!cond || S.goals[k]) return;
   S.goals[k] = seasonLabel();
   const g = GOALS.find(x => x[0] === k);
-  addNews(`🏅 Obiettivo raggiunto: <b>${esc(g[1])}</b>!`, 'gold');
-  toast(`🏅 ${g[1]}!`);
+  const prize = giveReward(k);
+  addNews(`🏅 Obiettivo raggiunto: <b>${esc(g[1])}</b>! Ricompensa: ${esc(prize)}.`, 'gold');
+  const msg = [`${g[1]} · Ricompensa: ${prize}`, 'goal', 'Obiettivo!'];
+  if (UI.advancing) UI.goalQueue.push(msg); else toast(...msg);
 }
 function checkGoals() {
   checkGoal('five', S.clients.length >= 5);
@@ -1317,7 +1365,7 @@ const UI = {
     app.innerHTML = `
       <header class="top">
         <div class="top-row">
-          <div class="brand">🏀 <span>${esc(S.agency)}</span></div>
+          <div class="brand">🏀 <span>${esc(S.agency)}</span>${S.legend ? ' <span class="legend" title="Agente leggendario">🏆</span>' : ''}</div>
           <div class="spacer"></div>
           <div class="cash-pill ${S.cash < 0 ? 'bad' : ''}" id="t-cash2">💰 ${fmt$(S.cash)}</div>
           <button class="btn help" id="t-help" onclick="Tutorial.start()" aria-label="Rivedi il tutorial">?</button>
@@ -1414,7 +1462,8 @@ const UI = {
       <div class="feed">${feed}</div>
 
       <div class="sec"><h2>🏅 Obiettivi</h2><span class="muted small">${Object.keys(S.goals).length}/${GOALS.length}</span></div>
-      <div class="goals">${GOALS.map(([k, l]) => `<div class="goal ${S.goals[k] ? 'done' : ''}">${S.goals[k] ? '✅' : '⬜'} ${esc(l)}</div>`).join('')}</div>
+      <div class="goals">${GOALS.map(([k, l]) => `<div class="goal ${S.goals[k] ? 'done' : ''}"><span class="gi">${S.goals[k] ? '✅' : '⬜'}</span>
+        <span class="gt"><b>${esc(l)}</b><small>${S.goals[k] ? `Ricompensa ottenuta (${S.goals[k]}): ` : '🎁 '}${esc(rewardText(GOAL_REWARDS[k]))}</small></span></div>`).join('')}</div>
 
       ${S.history.length ? `<div class="sec"><h2>📊 Storico stagioni</h2></div><div class="tbl-wrap"><table><tr><th>Stagione</th><th class="num">Entrate</th><th class="num">Spese</th><th class="num">Clienti</th><th class="num">Reputazione</th></tr>
         ${S.history.map(h => `<tr><td>${h.season}</td><td class="num good">${fmt$(h.income)}</td><td class="num bad">${fmt$(h.expense)}</td><td class="num">${h.clients}</td><td class="num">${h.rep.toFixed(1)}</td></tr>`).join('')}</table></div>` : ''}
@@ -1898,6 +1947,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();
