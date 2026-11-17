@@ -285,9 +285,9 @@ EVENTS.push(
   { id: 'fuori_forma', trait: 'appagato', ico: '🍔', title: '{P} si è presentato fuori forma',
     text: 'Dopo il nuovo contratto {P} ha preso 6 chili. Lo staff dei {T} è preoccupato.', cond: { team: true },
     choices: [
-      { label: 'Nutrizionista e preparatore ($15k)', fx: { cash: -15, odds: [0.6, { mor: -2 }, { ovr: -1 }] } },
-      { label: 'Discorso motivazionale', ask: 'player', fx: { pot: 1, mor: -3 } },
-      { label: 'Lascia stare', fx: { ovr: -2, pot: -2 }, tr: -3 },
+      { label: 'Nutrizionista e preparatore ($15k)', fx: { cash: -15, odds: [0.6, { mor: -2, weight: -4 }, { ovr: -1, weight: 3 }] } },
+      { label: 'Discorso motivazionale', ask: 'player', fx: { pot: 1, mor: -3, weight: -2 } },
+      { label: 'Lascia stare', fx: { ovr: -2, pot: -2, weight: 6 }, tr: -3 },
     ] },
 );
 

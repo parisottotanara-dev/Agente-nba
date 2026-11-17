@@ -77,6 +77,7 @@ function newPlayer(kind) {
     career: { titles: 0, allstar: 0, mvp: 0, roy: 0, seasons: 0 },
     num: pick(NUMBERS), look: genLook(), traits: genTraits(),
   };
+  genBody(p);
   return p;
 }
 function growPot(p) {
@@ -126,7 +127,7 @@ function newGame(agencyName, agentName) {
     const stars = STARS.filter(x => x[1] === t.abbr);
     for (const [name, , pos, age, ovr, num] of stars) {
       const p = newPlayer('pro');
-      Object.assign(p, { name, pos, age, ovr, num, team: t.id, star: true });
+      Object.assign(p, { name, pos, age, ovr, num, team: t.id, star: true }); genBody(p);
       growPot(p);
       p.salary = clamp(r1(marketValue(p) * rand(0.9, 1.1)), MIN_SAL, MAX_SAL);
       p.years = randi(1, 4);
@@ -341,6 +342,7 @@ function simWeekGames() {
   }
   S.nextRound = pairRound(); // il primo avversario della prossima settimana
   // statistiche individuali
+  recInit();
   for (const p of clients()) p.week = null;
   const MIN = [34, 33, 31, 29, 27, 24, 20, 16, 12, 8, 5, 3, 2, 1, 1];
   for (const t of S.teams) {
@@ -353,14 +355,24 @@ function simWeekGames() {
       const mine = isClient(p);
       if (mine) p.week = [];
       for (let g = 0; g < 4; g++) {
-        const form = 1 + gauss() * 0.22;
-        const pts = Math.max(0, Math.round(q * 0.56 * f * form));
-        const reb = Math.max(0, Math.round(q * rebK * f * (1 + gauss() * .25)));
-        const ast = Math.max(0, Math.round(q * astK * f * (1 + gauss() * .25)));
-        p.gp++; p.pts += pts; p.reb += reb; p.ast += ast;
-        if (mine) { const g2 = results[g][t.id]; p.week.push({ opp: g2.opp, home: g2.home, win: g2.win, us: g2.us, them: g2.them, pts, reb, ast, grade: gameGrade(pts, reb, ast, g2.win) }); }
+        const g2 = results[g][t.id];
+        // minuti: variano partita per partita (falli, partite già decise, supplementari)
+        const blow = Math.abs(g2.us - g2.them) >= 18;
+        const mins = clamp(Math.round(m * (1 + gauss() * 0.12) * (blow ? (i < 5 ? 0.85 : 1.6) : 1) + (chance(0.04) ? 5 : 0)), 0, 48);
+        if (!mins) continue;
+        const fg = mins / 36;
+        let form = 1 + gauss() * 0.22;
+        if (i < 3 && chance(0.012)) form *= rand(1.4, 1.9); // serata di grazia: può nascere un record
+        const pts = Math.max(0, Math.round(q * 0.56 * fg * form));
+        const reb = Math.max(0, Math.round(q * rebK * fg * (1 + gauss() * .25)));
+        const ast = Math.max(0, Math.round(q * astK * fg * (1 + gauss() * .25)));
+        p.gp++; p.min = (p.min || 0) + mins; p.pts += pts; p.reb += reb; p.ast += ast;
+        p.cgp = (p.cgp || 0) + 1; p.cpts = (p.cpts || 0) + pts; p.creb = (p.creb || 0) + reb; p.cast = (p.cast || 0) + ast;
+        recGame(p, t, pts, reb, ast);
+        if (mine) p.week.push({ opp: g2.opp, home: g2.home, win: g2.win, us: g2.us, them: g2.them, min: mins, pts, reb, ast, grade: gameGrade(pts, reb, ast, g2.win) });
       }
-      if (mine) p.last = p.week[3];
+      if (mine && !p.week.length) p.week = null;
+      if (mine && p.week) p.last = p.week[p.week.length - 1];
     });
   }
 }
@@ -371,7 +383,7 @@ function nextGameTxt(p) {
   return `${g.home ? 'vs' : '@'} ${S.teams[g.opp].name}`;
 }
 const avg = (p, k) => p.gp ? p[k] / p.gp : 0;
-const statLine = p => p.gp ? `${r1(avg(p, 'pts'))} pt · ${r1(avg(p, 'reb'))} rb · ${r1(avg(p, 'ast'))} as` : 'nessuna partita';
+const statLine = p => p.gp ? `${r1(avg(p, 'min'))} min · ${r1(avg(p, 'pts'))} pt · ${r1(avg(p, 'reb'))} rb · ${r1(avg(p, 'ast'))} as` : 'nessuna partita';
 const winPct = t => (t.w + t.l) ? t.w / (t.w + t.l) : 0.5;
 const standings = () => [...S.teams].sort((a, b) => winPct(b) - winPct(a) || b.w - a.w);
 const playerScore = p => p.ovr + avg(p, 'pts') * 0.45 + (teamOf(p) ? winPct(teamOf(p)) * 12 : 0);
@@ -847,6 +859,8 @@ function fxText(f, inst) {
   if (f.hype) o.push(`popolarità ${f.hype > 0 ? '+' : ''}${f.hype}`);
   if (f.ovr) o.push(`valutazione ${f.ovr > 0 ? '+' : ''}${f.ovr}`);
   if (f.raise) o.push(`stipendio +${Math.round(f.raise * 100)}%`);
+  if (f.height) o.push(`+${f.height} cm`);
+  if (f.weight) o.push(`${f.weight > 0 ? '+' : ''}${f.weight} kg`);
   if (f.pot) o.push(`potenziale ${f.pot > 0 ? '+' : ''}${f.pot}`);
   if (f.draftBoost) o.push(f.draftBoost > 0 ? 'sale nelle previsioni del Draft' : 'scende nelle previsioni del Draft');
   if (f.stayCollege) o.push('salta questo Draft');
@@ -870,6 +884,8 @@ function applyFx(f, inst, p) {
   if (f.rep) changeRep(f.rep);
   const targets = f.all ? clients() : p ? [p] : [];
   for (const x of targets) if (f.mor) x.morale = clamp(Math.round(x.morale + (f.mor < 0 && hasTrait(x, 'permaloso') ? f.mor * 1.4 : f.mor)), 0, 100);
+  if (f.height && p) { if (!p.h) genBody(p); p.h += f.height; }
+  if (f.weight && p) { if (!p.h) genBody(p); p.w += f.weight; }
   if (f.raise && p && p.team != null) p.salary = Math.min(MAX_SAL, r1(p.salary * (1 + f.raise)));
   if (f.br) changeBrandRel(inst.data.b, f.br);
   if (!p) { if (f.gem) findGem(); return; }
@@ -1298,6 +1314,91 @@ function checkPromises() {
 }
 
 /* ================================================================== */
+/* Fisico dei giocatori: altezza e peso realistici per ruolo           */
+/* ================================================================== */
+const BODY = { PG: [183, 196, 24.2], SG: [190, 201, 24.6], SF: [198, 208, 25.0], PF: [203, 211, 25.6], C: [208, 221, 26.2] };
+function genBody(p) {
+  const [lo, hi, bmi] = BODY[p.pos] || BODY.SF;
+  let h = Math.round(lo + (hi - lo) * Math.min(1, Math.max(0, 0.5 + gauss() * 0.28)));
+  if (Math.random() < 0.03) h += randi(3, 6); // ogni tanto un gigante per il suo ruolo
+  p.h = h;
+  p.w = Math.round((h / 100) ** 2 * (bmi + gauss() * 1.2));
+}
+function bodyTxt(p) {
+  if (!p.h) genBody(p);
+  const inch = Math.round(p.h / 2.54), ft = Math.floor(inch / 12);
+  return `${p.h} cm (${ft}'${inch % 12}") · ${p.w} kg`;
+}
+
+/* ================================================================== */
+/* Record della lega                                                   */
+/* ================================================================== */
+// Le leggende storiche (parodia) sono il traguardo: i record "della lega" partono dal 2026 e i tuoi giocatori li possono battere
+const HISTORIC = {
+  game: { pts: [100, 'Wilt Chamberlano', 1962], reb: [55, 'Wilt Chamberlano', 1960], ast: [30, 'Scott Skilesi', 1990] },
+  season: { ppg: [50.4, 'Wilt Chamberlano', 1962], rpg: [27.2, 'Wilt Chamberlano', 1961], apg: [14.5, 'John Stocktonn', 1990] },
+  career: { pts: [38387, 'Kareem Abdul-Jabbarr', 1989], reb: [23924, 'Wilt Chamberlano', 1973], ast: [15806, 'John Stocktonn', 2003],
+    gp: [1611, 'Robert Parishh', 1997], titles: [11, 'Bill Russello', 1969], mvp: [6, 'Kareem Abdul-Jabbarr', 1980], allstar: [19, 'LeBonno James', 2023] },
+};
+const REC_LABEL = { pts: 'Punti', reb: 'Rimbalzi', ast: 'Assist', ppg: 'Punti a partita', rpg: 'Rimbalzi a partita', apg: 'Assist a partita',
+  gp: 'Partite giocate', titles: 'Titoli', mvp: 'MVP', allstar: 'All-Star' };
+function recInit() { S.records = S.records || { game: {}, season: {}, retired: [] }; }
+// record di una singola partita (tutti i giocatori, ogni partita)
+function recGame(p, team, pts, reb, ast) {
+  const G = S.records.game;
+  for (const [k, v] of [['pts', pts], ['reb', reb], ['ast', ast]]) {
+    p.hi = p.hi || {};
+    if (v > (p.hi[k] || 0)) p.hi[k] = v; // il suo massimo in carriera
+    if (!G[k] || v > G[k].v) {
+      const had = !!G[k];
+      G[k] = { v, name: p.name, pid: p.id, team: team.abbr, season: seasonLabel() };
+      if (had && v >= (k === 'pts' ? 45 : k === 'reb' ? 20 : 15)) recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una partita`);
+    }
+  }
+}
+// record stagionali: a fine stagione regolare, minimo 40 partite
+function recSeason() {
+  recInit();
+  const Sx = S.records.season;
+  for (const p of Object.values(S.players)) {
+    if (p.retired || p.team == null || p.gp < 40) continue;
+    for (const [k, base] of [['ppg', 'pts'], ['rpg', 'reb'], ['apg', 'ast']]) {
+      const v = r1(p[base] / p.gp);
+      if (!Sx[k] || v > Sx[k].v) { const had = !!Sx[k]; Sx[k] = { v, name: p.name, pid: p.id, team: teamOf(p).abbr, season: seasonLabel() }; if (had) recNews(p, `${v} ${REC_LABEL[k].toLowerCase()} in una stagione`); }
+    }
+  }
+}
+function recNews(p, what) {
+  addNews(`📜 <b>Nuovo record della lega!</b> ${esc(p.name)}: ${esc(what)}.`, isClient(p) ? 'gold' : '');
+  if (isClient(p)) { const m = [`${p.name}: ${what}`, 'goal', 'Record!']; if (UI.advancing) UI.goalQueue.push(m); else toast(...m); }
+}
+const careerStat = (p, k) => k === 'titles' || k === 'mvp' || k === 'allstar' ? (p.career ? p.career[k] : p[k]) || 0 : k === 'gp' ? p.cgp || 0 : p['c' + k] || 0;
+// classifica di carriera: giocatori in attività + leggende della tua era già ritirate
+function careerBoard(k, n = 10) {
+  recInit();
+  const act = Object.values(S.players).filter(p => !p.retired && (p.cgp || 0) > 0).map(p => ({ name: p.name, pid: p.id, v: careerStat(p, k), active: true }));
+  const ret = S.records.retired.map(r => ({ name: r.name, v: r[k] || 0, active: false, until: r.until }));
+  return [...act, ...ret].filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, n);
+}
+// quando un giocatore si ritira, i suoi numeri restano nella storia se sono tra i migliori
+function recRetire(p) {
+  recInit();
+  if (!(p.cgp > 0)) return;
+  const snap = { name: p.name, until: seasonLabel(), pts: p.cpts || 0, reb: p.creb || 0, ast: p.cast || 0, gp: p.cgp || 0,
+    titles: p.career.titles, mvp: p.career.mvp, allstar: p.career.allstar, client: isClient(p) };
+  const keys = ['pts', 'reb', 'ast', 'gp', 'titles', 'mvp', 'allstar'];
+  const worthy = keys.some(k => { const b = careerBoard(k, 25); return snap[k] > 0 && (b.length < 25 || snap[k] > b[b.length - 1].v); });
+  if (!worthy) return;
+  S.records.retired.push(snap);
+  // teniamo la storia leggera: solo chi è nei primi 25 di almeno una classifica
+  if (S.records.retired.length > 80) {
+    const keep = new Set();
+    for (const k of keys) [...S.records.retired].sort((a, b) => (b[k] || 0) - (a[k] || 0)).slice(0, 25).forEach(r => keep.add(r));
+    S.records.retired = S.records.retired.filter(r => keep.has(r));
+  }
+}
+
+/* ================================================================== */
 /* Avanzamento                                                         */
 /* ================================================================== */
 function advance() {
@@ -1343,7 +1444,7 @@ function advance() {
     if (S.week === 10) allStar();
     if (S.week === 12) extensionOffers();
     if (chance(0.25)) randomLeagueNews();
-    if (S.week >= REG_WEEKS) { checkPromises(); S.phase = 'po'; S.week = 1; addNews('🏆 Stagione regolare finita: si va ai playoff!', 'gold'); }
+    if (S.week >= REG_WEEKS) { recSeason(); checkPromises(); S.phase = 'po'; S.week = 1; addNews('🏆 Stagione regolare finita: si va ai playoff!', 'gold'); }
     else S.week++;
   } else if (S.phase === 'po') {
     playoffs();
@@ -1606,7 +1707,7 @@ function offseason() {
     if (ret) { p.retired = true; p.team = null; retiredNow.push(p); continue; }
     // contratti
     if (p.team != null) { p.years--; if (p.years <= 0) { p.team = null; p.years = 0; } }
-    p.gp = p.pts = p.reb = p.ast = 0; p.injury = 0;
+    p.gp = p.pts = p.reb = p.ast = p.min = 0; p.injury = 0;
     p.refusals = Math.max(0, p.refusals - 1);
     p.sponsors = p.sponsors.map(s => ({ ...s, years: s.years - 1 })).filter(s => s.years > 0);
     p.hype *= 0.6;
@@ -1624,6 +1725,7 @@ function offseason() {
     if (p.team == null && !p.school && !p.retired && !isClient(p) && p.ovr < 54) { p.retired = true; retiredNow.push(p); }
   }
   // pulizia: rimuovi i ritirati non clienti per tenere leggero il salvataggio
+  for (const p of retiredNow) recRetire(p);
   for (const p of retiredNow) delete S.players[p.id];
   // rose troppo lunghe
   for (const t of S.teams) {
@@ -1930,6 +2032,7 @@ const UI = {
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) : p.school ? esc(p.school) : '—'}</dd>
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years} ann${p.years > 1 ? 'i' : 'o'}</dd>` : ''}
         <dt>Commissione</dt><dd>${p.comm}%${t ? ` · ${fmt$(p.salary * 1e6 * p.comm / 100)}/anno` : ''}</dd>
+        <dt>Fisico</dt><dd>${bodyTxt(p)}</dd>
         <dt>Valore di mercato</dt><dd>${fmtM(marketValue(p))}</dd>
         ${t ? `<dt>Statistiche</dt><dd>${statLine(p)}</dd>` : ''}
         ${p.sponsors.length ? `<dt>Sponsor</dt><dd>${p.sponsors.map(s => esc(s.brand)).join(', ')}</dd>` : ''}
@@ -1992,7 +2095,7 @@ const UI = {
       <button class="mk-main" onclick="UI.player(${p.id})">
         ${avatarSVG(p, 48)}
         <span class="mk-info"><b>${esc(p.name)}${p.gem ? ' 💎' : p.academy ? ' 🎓' : ''}${p.star || p.vip ? ' ⭐' : ''}</b>
-          <span>${p.pos} · ${p.age} anni · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
+          <span>${p.pos} · ${p.age} anni · ${p.h || (genBody(p), p.h)} cm · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
           <span class="${p.agency ? '' : 'good'}">${p.agency ? '🔒 ' + esc(p.agency) : '🟢 nessun agente'}</span>
           <span class="ti">${(p.traits || []).map(t => TRAITS[t].icon + ' ' + TRAITS[t].label).join(' · ')}</span></span>
         <span class="mk-rat"><span><small>OVR</small><b>${ex ? '' : '~'}${shownOvr(p)}</b></span><span><small>POT</small><b class="pot">${ex ? '' : '~'}${shownPot(p)}</b></span></span>
@@ -2026,7 +2129,7 @@ const UI = {
     else if (p.school) { const pr = draftProjection(p); meta = `🎓 ${esc(p.school)} · proiezione Draft <b>#${pr}</b>${p.promise != null ? ` · 📣 promesso ai ${esc(S.teams[p.promise].name)}` : ''}`; }
     else if (!t) { const n = S.offers.filter(o => o.pid === p.id).length; meta = `🆓 Senza squadra${n ? ` · <b>${n} offert${n > 1 ? 'e' : 'a'}</b>` : ''}`; }
     else meta = `${ng ? `📅 Prossima: <b>${esc(ng)}</b> · ` : ''}🏆 ${teamRank(t.id)}ª in classifica (${t.w}-${t.l})`;
-    const stats = t && p.gp ? `<div class="pl-stats"><span><b>${r1(avg(p, 'pts'))}</b>PTS</span><span><b>${r1(avg(p, 'reb'))}</b>REB</span><span><b>${r1(avg(p, 'ast'))}</b>AST</span></div>` : '';
+    const stats = t && p.gp ? `<div class="pl-stats"><span><b>${r1(avg(p, 'min'))}</b>MIN</span><span><b>${r1(avg(p, 'pts'))}</b>PTS</span><span><b>${r1(avg(p, 'reb'))}</b>REB</span><span><b>${r1(avg(p, 'ast'))}</b>AST</span></div>` : '';
     return `<button class="pl" onclick="UI.player(${p.id})">
       ${avatarSVG(p, 52)}
       <span class="pl-main"><span class="pl-name"><b>${esc(p.name)}</b><span class="ti">${(p.traits || []).map(t => TRAITS[t].icon).join('')}</span><span class="ov ${this.ovrClass(p.ovr)}">${p.ovr}</span></span>
@@ -2050,7 +2153,7 @@ const UI = {
         const L = p.week[3], w = p.week.filter(g => g.win).length;
         return `<div class="wr-row ${L.grade[0] === 'A' ? 'top' : ''}">${avatarSVG(p, 40)}
           <div class="wr-info"><b>${esc(p.name)}</b><span>${L.win ? '✅ V' : '❌ P'} ${L.us}-${L.them} ${L.home ? 'vs' : '@'} ${esc(S.teams[L.opp].name)} · settimana ${w}-${4 - w}</span>
-          <span class="wr-line">${L.pts} pt · ${L.reb} rb · ${L.ast} as</span></div>
+          <span class="wr-line">${L.min != null ? `${L.min}' · ` : ''}${L.pts} pt · ${L.reb} rb · ${L.ast} as</span></div>
           <span class="grade big ${gradeClass(L.grade)}">${L.grade}</span></div>`;
       }).join('')}</div>
       <div class="wr-foot"><button class="btn primary wr-go" id="wr-go">Continua ▶</button>
@@ -2219,7 +2322,10 @@ const UI = {
       <dl class="rows">
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) + ' · #' + p.num : p.school ? esc(p.school) : 'Free agent'}</dd>
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years}</dd>` : ''}
+        <dt>Fisico</dt><dd>${bodyTxt(p)}</dd>
         <dt>Valore di mercato</dt><dd>${ex ? '' : '~'}${fmtM(shownValue(p))}</dd>
+        ${p.cgp ? `<dt>In carriera</dt><dd>${p.cgp} gare · ${(p.cpts || 0).toLocaleString('it-IT')} pt · ${(p.creb || 0).toLocaleString('it-IT')} rb · ${(p.cast || 0).toLocaleString('it-IT')} as</dd>` : ''}
+        ${p.hi && p.hi.pts ? `<dt>Massimi in una partita</dt><dd>${p.hi.pts} pt · ${p.hi.reb || 0} rb · ${p.hi.ast || 0} as</dd>` : ''}
         <dt>Agenzia</dt><dd>${mine ? esc(S.agency) : p.agency ? esc(p.agency) : 'Nessuna'}</dd>
         ${t ? `<dt>Stagione</dt><dd>${statLine(p)} (${p.gp} gare)</dd>` : ''}
         <dt>Popolarità</dt><dd>${Math.round(p.hype)}/100</dd>
@@ -2274,8 +2380,53 @@ const UI = {
       <div class="tbl-wrap"><table><tr><th>Giocatore</th><th>Squadra</th><th class="num">OVR</th><th>Statistiche</th><th class="num">Stipendio</th></tr>
         ${Object.values(S.players).filter(p => p.team != null && !p.retired).sort((a, b) => playerScore(b) - playerScore(a)).slice(0, 15)
           .map(p => `<tr class="${isClient(p) ? 'mine' : ''}"><td><a class="pname" href="#" onclick="UI.player(${p.id});return false">${avatarSVG(p, 28)}${esc(p.name)}${p.star || p.vip ? ' ⭐' : ''}</a></td><td>${teamOf(p).abbr}</td><td class="num">${p.ovr}</td><td>${statLine(p)}</td><td class="num">${fmtM(p.salary)}</td></tr>`).join('')}
-      </table></div>`;
+      </table></div>
+      <div id="t-rec">${this.v_records()}</div>`;
   },
+  /* ---------- Record della lega ---------- */
+  recTab: 'game',
+  v_records() {
+    recInit();
+    const R = S.records, tab = this.recTab;
+    const mine = clients().filter(p => !p.retired);
+    const who = r => r ? `<b>${esc(r.name)}</b>${S.players[r.pid] && isClient(S.players[r.pid]) ? ' <span class="tag fa">tuo</span>' : ''}<small>${esc(r.team || '')} · ${esc(r.season || '')}</small>` : '<small class="muted">ancora nessuno</small>';
+    const hist = h => `<b>${h[0].toLocaleString('it-IT')}</b><small>${esc(h[1])}, ${h[2]}</small>`;
+    const best = (vals) => { const b = vals.filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0]; return b ? `<b>${b.v.toLocaleString('it-IT')}</b><small>${esc(b.name)}</small>` : '<small class="muted">—</small>'; };
+    let body = '';
+    if (tab === 'game' || tab === 'season') {
+      const keys = tab === 'game' ? ['pts', 'reb', 'ast'] : ['ppg', 'rpg', 'apg'];
+      const src = tab === 'game' ? R.game : R.season;
+      body = `<div class="grid">${keys.map(k => {
+        const r = src[k], h = HISTORIC[tab][k];
+        const myv = mine.map(p => ({ name: p.name, v: tab === 'game' ? ((p.hi || {})[k] || 0) : (p.gp >= 10 ? r1(p[{ ppg: 'pts', rpg: 'reb', apg: 'ast' }[k]] / p.gp) : 0) })).sort((a, b) => b.v - a.v)[0];
+        const pct = myv && r ? Math.min(100, Math.round(myv.v / r.v * 100)) : 0;
+        return `<div class="card rec-card"><h3>${REC_LABEL[k]} ${tab === 'game' ? 'in una partita' : 'in una stagione'}</h3>
+          <div class="rec-main">${r ? `<b class="gold">${r.v}</b><span>${who(r)}</span>` : '<span class="muted small">Ancora nessuno: la storia comincia ora.</span>'}</div>
+          <p class="small muted">Leggenda storica: <b>${h[0]}</b> di ${esc(h[1])} (${h[2]})</p>
+          ${myv && myv.v ? `<div class="small">Il tuo migliore: <b>${esc(myv.name)}</b>, ${myv.v} <span class="muted">(${pct}% del record della lega)</span><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>` : ''}</div>`;
+      }).join('')}</div>
+        <p class="small muted">${tab === 'game' ? '"Il tuo migliore" è il massimo in carriera di un tuo cliente in una partita.' : 'Per la stagione servono almeno 40 partite; "il tuo migliore" è la media attuale di un tuo cliente (almeno 10 gare).'}</p>`;
+    } else {
+      const keys = tab === 'career' ? ['pts', 'reb', 'ast', 'gp'] : ['titles', 'mvp', 'allstar'];
+      body = keys.map(k => {
+        const board = careerBoard(k), h = HISTORIC.career[k];
+        const myBest = mine.map(p => ({ name: p.name, v: careerStat(p, k) })).sort((a, b) => b.v - a.v)[0];
+        const pct = myBest && h ? Math.min(100, Math.round(myBest.v / h[0] * 100)) : 0;
+        return `<div class="card rec-card"><h3>${REC_LABEL[k]} in carriera</h3>
+          <p class="small muted">Leggenda storica: <b>${h[0].toLocaleString('it-IT')}</b> di ${esc(h[1])}</p>
+          ${myBest && myBest.v ? `<div class="small">Il tuo migliore: <b>${esc(myBest.name)}</b>, ${myBest.v.toLocaleString('it-IT')} <span class="muted">(${pct}% del record storico)</span><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>` : ''}
+          <ol class="rec-list">${board.map(x => { const pl = x.pid != null ? S.players[x.pid] : null, cl = pl && isClient(pl);
+            return `<li class="${cl ? 'mine' : ''}"><span>${esc(x.name)}${cl ? ' <span class="tag fa">tuo</span>' : ''}${x.active ? '' : ` <small class="muted">ritirato ${esc(x.until || '')}</small>`}</span><b>${x.v.toLocaleString('it-IT')}</b></li>`; }).join('') || '<li class="muted">Ancora nessuno: la storia comincia ora.</li>'}</ol></div>`;
+      }).join('');
+      body = `<div class="grid">${body}</div>`;
+    }
+    return `<h2>📜 Record della lega</h2>
+      <p class="small muted">I record contano dalla stagione 2026-27, quando inizia la tua carriera. Accanto vedi le leggende storiche: battere loro è roba da Hall of Fame.</p>
+      <div class="filters"><div class="seg">${[['game', 'Partita'], ['season', 'Stagione'], ['career', 'Carriera'], ['awards', 'Premi']].map(([k, l]) =>
+        `<button class="${tab === k ? 'on' : ''}" onclick="UI.recTab='${k}';UI.tab='league';UI.render();document.getElementById('t-rec').scrollIntoView()">${l}</button>`).join('')}</div></div>
+      ${body}`;
+  },
+
 
   /* ---------- Staff ---------- */
   v_staff() {
@@ -2411,6 +2562,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();

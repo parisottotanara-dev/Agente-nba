@@ -3,7 +3,7 @@
    senza internet si gioca con la copia salvata sul telefono. */
 'use strict';
 
-const CACHE = 'agente-nba-v5';
+const CACHE = 'agente-nba-v6';
 const APP = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './names.js', './events.js', './events_extra.js', './traits.js', './tuning.js', './art.js', './game.js',

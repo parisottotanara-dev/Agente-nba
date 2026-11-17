@@ -26,7 +26,7 @@ const SEASONS = +process.argv[2] || 50;
       for (const id of S.clients) { const p = S.players[id]; if (!p) issue('cliente inesistente', id); else if (p.retired) issue('cliente ritirato ancora in agenzia', p.name); }
       const roster = {};
       for (const p of Object.values(S.players)) {
-        for (const k of ['ovr', 'pot', 'age', 'morale', 'hype', 'salary', 'gp', 'pts', 'reb', 'ast'])
+        for (const k of ['ovr', 'pot', 'age', 'morale', 'hype', 'salary', 'gp', 'pts', 'reb', 'ast', 'h', 'w'])
           if (!num(p[k])) issue(`campo ${k} non numerico`, `${p.name}: ${p[k]}`);
         if (p.ovr < 35 || p.ovr > 99) issue('valutazione fuori scala', `${p.name} ${p.ovr}`);
         if (p.pot > 99) issue('potenziale > 99', `${p.name} ${p.pot}`);

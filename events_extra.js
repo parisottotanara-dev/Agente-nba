@@ -45,8 +45,8 @@ EVENTS.push(
     text: 'A {age} anni ha avuto un ultimo scatto di crescita. I preparatori non credono ai loro occhi.',
     cond: { maxAge: 21 },
     choices: [
-      { label: 'Programma di allenamento su misura ($30k)', fx: { cash: -30, ovr: 4, pot: 7 } },
-      { label: 'Lascia fare alla natura', fx: { ovr: 2, pot: 5 } },
+      { label: 'Programma di allenamento su misura ($30k)', fx: { cash: -30, ovr: 4, pot: 7, height: 5 } },
+      { label: 'Lascia fare alla natura', fx: { ovr: 2, pot: 5, height: 5 } },
     ] },
   { id: 'contratto_vita', rare: true, ico: '💎', title: '{B} offre un contratto a vita a {P}',
     text: 'Un accordo storico: il marchio vuole legarsi a {P} per sempre, come le grandi leggende.',
