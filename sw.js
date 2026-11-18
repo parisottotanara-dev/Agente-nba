@@ -3,7 +3,7 @@
    senza internet si gioca con la copia salvata sul telefono. */
 'use strict';
 
-const CACHE = 'agente-nba-v23';
+const CACHE = 'agente-nba-v24';
 const APP = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './names.js', './nations.js', './events.js', './events_extra.js', './traits.js', './tuning.js', './records_data.js', './art.js', './game.js',
@@ -11,7 +11,7 @@ const APP = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -28,7 +28,8 @@ self.addEventListener('fetch', e => {
   const font = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (url.origin !== location.origin && !font) return;
   e.respondWith(
-    fetch(e.request).then(res => {
+    // cache: 'no-cache' chiede sempre al sito se il file è cambiato (niente copie vecchie di 10 minuti)
+    fetch(font ? e.request : e.request.url, font ? undefined : { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
       if (res && (res.ok || res.type === 'opaque')) {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));

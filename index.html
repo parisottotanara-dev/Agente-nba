@@ -39,7 +39,22 @@
   <script>
     // App installabile: il service worker salva il gioco sul telefono per usarlo anche offline
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+      // se c'è una versione nuova si installa e la pagina si ricarica da sola (la partita è già salvata)
+      const hadController = !!navigator.serviceWorker.controller;
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || reloading) return;
+        reloading = true;
+        try { if (typeof save === 'function' && typeof S !== 'undefined' && S) save(); } catch (e) { /* ignora */ }
+        location.reload();
+      });
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+          // quando riapri l'app dal telefono controlla subito se ci sono aggiornamenti
+          document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+          setInterval(() => reg.update().catch(() => {}), 10 * 60 * 1000);
+        }).catch(() => {});
+      });
     }
   </script>
 </body>
