@@ -338,6 +338,8 @@ function openFeedback() {
 function saveFileName() { return `super-agente-nba-${(S.agency || 'partita').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${S.season}.json`; }
 async function exportSave() {
   save(); S.lastExport = S.season; save();
+  // dentro la chat di Claude non si possono scaricare file: lì si usa il codice
+  if (window.claude && window.claude.use) return copySaveCode();
   const text = JSON.stringify(S), name = saveFileName();
   track('salvataggio-esportato');
   try {
@@ -353,7 +355,13 @@ async function copySaveCode() {
   save(); S.lastExport = S.season; save();
   const code = typeof CompressionStream !== 'undefined' ? 'SAN1:' + await gzip(JSON.stringify(S)) : JSON.stringify(S);
   try { await navigator.clipboard.writeText(code); track('codice-copiato'); return { msg: 'Codice copiato. Incollalo in una nota o mandalo a te stesso: serve per riprendere la partita.', type: 'good' }; }
-  catch (e) { return { msg: 'Non sono riuscito a copiare il codice: usa "Esporta file".', type: 'bad' }; }
+  catch (e) {
+    // copia automatica bloccata: mostro il codice da copiare a mano
+    UI.openModal(`<h3>Il codice della tua partita</h3><p class="small">Tieni premuto nel riquadro, seleziona tutto e copia. Incollalo in una nota o mandalo a te stesso.</p>
+      <textarea id="imp-code" rows="6" readonly>${esc(code)}</textarea><div class="actions"><button class="btn" onclick="UI.closeModal()">Fatto</button></div>`);
+    const ta = document.getElementById('imp-code'); if (ta) { ta.focus(); ta.select(); }
+    return { msg: 'Copia il codice dal riquadro.', type: 'info' };
+  }
 }
 // importa: da file o da codice. Controlla che sia davvero una partita prima di sovrascrivere.
 async function readSave(text) {
