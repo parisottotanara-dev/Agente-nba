@@ -148,7 +148,7 @@ function newGame(agencyName, agentName) {
   S = {
     v: 2, namesV: 2, agency: agencyName || 'Hoop Dreams Agency', agent: agentName || 'Agente',
     cash: 300000, rep: 15, season: 2026, phase: 'fa', week: 1, turn: 0,
-    staff: { scout: 0, legal: 0, marketing: 0, office: 0, informer: 0, hq: 0, academy: 0 }, intel: [],
+    staff: { scout: 0, legal: 0, marketing: 0, office: 0, informer: 0, hq: 0, academy: 0, center: 0 }, intel: [],
     teams: TEAMS.map((t, i) => ({ id: i, city: t[0], name: t[1], abbr: t[2], market: t[3], color: t[4], color2: t[5], w: 0, l: 0 })),
     players: {}, clients: [], offers: [], inbox: [], news: [], nextId: 1, nextEv: 1,
     goals: {}, debtWeeks: 0, history: [], lastChampion: null, over: false,
@@ -322,16 +322,17 @@ const STAFF = {
   office: { name: 'Uffici', icon: '🏢', desc: 'Uffici più grandi e più collaboratori: puoi seguire più clienti.' },
   hq: { name: 'Sede', icon: '🏙️', desc: 'Una sede che fa colpo: i giocatori accettano più volentieri di incontrarti e il tuo nome resta sulla bocca di tutti.' },
   academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma ragazzi che arrivano al Draft già legati a te. Un\'accademia più grande attira ragazzi migliori, e ogni tanto ci passa un talento generazionale da trasformare in campione.' },
+  center: { name: 'Centro di allenamento', icon: '🏋️', desc: 'Palestre, piscina, medici e campi tutti per i tuoi clienti. Si fanno male meno spesso, guariscono prima e da veterani calano più piano.' },
   informer: { name: 'Informatore', icon: '🕵️', desc: 'Ti passa soffiate sui prospetti del prossimo Draft: potenziale, chi vuole essere seguito, chi sta per firmare con un rivale. All\'inizio è scarso e a volte sbaglia.' },
 };
-const UPGRADE_COSTS = { hq: [250000, 900000, 3000000, 9000000, 25000000], academy: [1500000, 4000000, 10000000, 22000000, 45000000] };
+const UPGRADE_COSTS = { center: [8000000, 15000000, 25000000, 40000000, 60000000], hq: [250000, 900000, 3000000, 9000000, 25000000], academy: [1500000, 4000000, 10000000, 22000000, 45000000] };
 const upgradeCost = (lvl, k) => (UPGRADE_COSTS[k] || [60000, 220000, 750000, 2500000, 7000000])[lvl] ?? Infinity;
 // costi fissi: staff, sede, accademia e gestione dei clienti (dal quarto in poi)
 // quanto aumentano le spese settimanali con un livello in più
 const ACADEMY_REP = 45;
-const staffStep = k => ({ office: 4000, hq: 6000, academy: 12000 })[k] || 3000;
+const staffStep = k => ({ office: 4000, hq: 6000, academy: 12000, center: 25000 })[k] || 3000;
 const weeklyCost = () => 6000 + 3000 * (S.staff.scout + S.staff.legal + S.staff.marketing + (S.staff.informer || 0)) + 4000 * S.staff.office
-  + 6000 * (S.staff.hq || 0) + 12000 * (S.staff.academy || 0) + 1200 * Math.max(0, S.clients.length - 3);
+  + 6000 * (S.staff.hq || 0) + 12000 * (S.staff.academy || 0) + 25000 * (S.staff.center || 0) + pstaffWeekly() + 1200 * Math.max(0, S.clients.length - 3);
 /* ---------- Prestiti della banca ----------
    Un prestito alla volta, da restituire a rate settimanali in 2-5 stagioni.
    Quanto ti prestano e a che tasso dipende da reputazione e incassi. */
@@ -751,6 +752,8 @@ function fillRosters() {
 function starPower(p) { return p.school ? Math.max(p.ovr, (p.ovr + p.pot) / 2) : p.ovr; }
 function pitchCost(p) { return Math.round(Math.max(1500, (starPower(p) - 50) * 450) / 100) * 100; }
 // Probabilità che accetti di sedersi al tavolo: è qui che i campioni sono difficili
+// jet privato, cena in un resort, la famiglia ospite: è difficile dire di no
+const luxChance = p => { const o = openChance(p); return clamp(Math.min(o + 0.25, o * 2 + 0.05) + (hasTrait(p, 'vanitoso') || hasTrait(p, 'avido') ? 0.06 : 0), 0.05, 0.97); };
 function openChance(p) {
   let c = 0.55 + (S.rep - (starPower(p) - 55) * 1.6) / 80 + S.staff.marketing * 0.03 + (S.staff.hq || 0) * 0.04 + (p.bond || 0) / 150;
   if (p.agency) c -= 0.15;
@@ -777,16 +780,17 @@ const PROMISES = {
 // e nessun marchio sponsorizza un giocatore troppo debole o ancora al college.
 const promiseFeasible = (p, k) => k === 'camp' || (!p.school && (k === 'contender' || p.ovr >= 62));
 const promiseValue = (p, keys) => keys.reduce((s, k) => s + PROMISES[k].value * (PROMISES[k].likes.some(t => hasTrait(p, t)) ? 1.6 : 1), 0);
-function startTalk(pid) {
+const luxCost = p => Math.round(Math.max(80000, pitchCost(p) * 12) / 1000) * 1000;
+function startTalk(pid, lux = false) {
   const p = P(pid);
   if (clients().length >= capacity()) return { msg: 'Hai raggiunto il limite di clienti: amplia gli uffici.', type: 'bad' };
   if (S.talks[pid]) return { ok: true };
   if (p.lastPitch === S.turn) return { msg: 'Ti ha già detto di no questa settimana. Riprova la prossima.', type: 'warn' };
   if (p.lockedUntil > S.season) return { msg: 'Non vuole più sentirti fino alla prossima stagione.', type: 'bad' };
-  const cost = pitchCost(p);
+  const cost = lux ? luxCost(p) : pitchCost(p);
   if (S.cash < cost) return { msg: `Per organizzare l'incontro servono ${fmt$(cost)}.`, type: 'bad' };
   spend(cost); p.lastPitch = S.turn;
-  if (!chance(openChance(p))) {
+  if (!chance(lux ? luxChance(p) : openChance(p))) {
     p.refusals++;
     if (p.refusals >= 3) p.lockedUntil = S.season + 1;
     return { msg: `${p.name} non crede che tu possa rappresentarlo. ${p.refusals >= 3 ? 'Per un po\' non vuole più sentirti.' : 'Riprova più avanti.'}`, type: 'bad' };
@@ -801,7 +805,7 @@ function startTalk(pid) {
 }
 const talkTxt = o => `${o.comm}% di commissione${o.bonus ? ` + $${o.bonus}k alla firma` : ''}`;
 // Probabilità che un'agenzia rivale si intrometta a ogni giro di trattativa
-const rivalCut = p => 0.12 + (p.agency ? 0.08 : 0) + (starPower(p) >= 80 ? 0.08 : 0);
+const rivalCut = p => 0.12 + (p.agency ? 0.08 : 0) + (starPower(p) >= 80 ? 0.08 : 0) + (Object.values(S.stakes || {}).some(v => v >= 100) ? 0.06 : 0);
 function talkOffer(pid, comm, bonus, promises = []) {
   const p = P(pid), t = S.talks[pid]; if (!t) return;
   promises = promises.filter(k => promiseFeasible(p, k));
@@ -933,10 +937,24 @@ function seekSponsor(pid) {
   addNews(`💼 Hai trovato uno sponsor a ${esc(p.name)}: ${esc(brand)}, ${fmtM(value)} l'anno.`, 'good');
   return { msg: `${brand} sponsorizza ${p.name}: ${fmtM(value)} l'anno (tua quota ${fmt$(value * 1e6 * SPONSOR_CUT)}).`, type: 'good' };
 }
+// campagna d'immagine: uno studio di comunicazione lavora su di lui per una stagione
+const campaignCost = p => Math.round(clamp(60000 + (p.salary || 0) * 1e6 * 0.008 + p.ovr * 1500, 120000, 900000) / 1000) * 1000;
+function imageCampaign(pid) {
+  const p = P(pid), cost = campaignCost(p);
+  if (p.campaignSeason === S.season) return { msg: `La campagna per ${p.name} è già in corso in questa stagione.`, type: 'warn' };
+  if (S.cash < cost) return { msg: `Servono ${fmt$(cost)}.`, type: 'bad' };
+  spend(cost); p.campaignSeason = S.season;
+  let h = randi(12, 22);
+  if (hasTrait(p, 'vanitoso')) h += 6;
+  if (hasTrait(p, 'timido')) h -= 5;
+  p.hype = clamp(p.hype + h, 0, 100); p.morale = clamp(p.morale + 4, 0, 100);
+  addNews(`📣 Campagna d'immagine per <b>${esc(p.name)}</b>: interviste, spot e un documentario sui social. Popolarità +${h}.`, 'good');
+  return { msg: `Popolarità di ${p.name} +${h}: gli sponsor pagheranno di più.`, type: 'good' };
+}
 function sponsorValue(p) {
   const t = teamOf(p), mkt = t ? t.market : 0.3;
   const base = Math.pow(clamp((p.ovr - 60) / 33, 0.03, 1.2), 2) * 5;
-  return r1(Math.max(0.1, base * (0.7 + mkt * 0.6) * (1 + p.hype / 100) * (1 + S.staff.marketing * 0.08)));
+  return r1(Math.max(0.1, base * (0.7 + mkt * 0.6) * (1 + p.hype / 100) * (1 + S.staff.marketing * 0.08) * (p.campaignSeason === S.season ? 1.15 : 1)));
 }
 function moraleDrift() {
   for (const p of clients()) {
@@ -1122,7 +1140,11 @@ function applyFx(f, inst, p) {
   if (f.pot || f.ovr) capPot(p);
   if (f.draftBoost) p.draftBoost = (p.draftBoost || 0) + f.draftBoost;
   if (f.stayCollege && p.school) p.skipDraft = S.season;
-  if (f.inj) { p.injury = Math.max(p.injury, f.inj); injuryHit(p, f.inj); }
+  if (f.inj) {
+    const k = careFactor(p);
+    if (k < 1 && chance((1 - k) * 0.5)) { /* i medici lo hanno fermato in tempo */ }
+    else { const w = Math.max(1, Math.round(f.inj * k)); p.injury = Math.max(p.injury, w); injuryHit(p, w); }
+  }
   if (f.comm) p.comm = clamp(p.comm + f.comm, 1, 4);
   if (f.look) { p.look = { ...(p.look || {}), ...f.look }; if (f.look.number != null) p.num = f.look.number; }
   if (f.sponsor && inst.data.value) {
@@ -1361,6 +1383,7 @@ function draftProjection(p) {
   return draftBoard().indexOf(p) + 1;
 }
 function recChance(p, tid) {
+  if (stakeOf(tid) >= 100) return 1; // è la tua squadra
   const rel = teamRel(tid);
   let c = (p.school ? 0.25 : p.team == null ? 0.2 : 0.08) + rel / 100 * 0.6;
   if (p.school) { // promettere una scelta molto più alta del suo valore è difficile
@@ -1551,6 +1574,12 @@ function buyStake(tid) {
   addNews(`🏟️ Hai comprato il 5% dei ${esc(teamName(t))}: ora ne possiedi il <b>${S.stakes[tid]}%</b>.`, 'gold');
   checkGoal('owner', true);
   checkGoal('majority', S.stakes[tid] >= 51);
+  if (S.stakes[tid] >= 100) {
+    checkGoal('fullowner', true);
+    // conflitto d'interessi: le altre squadre si fidano meno di te
+    for (const o of S.teams) if (o.id !== tid) changeTeamRel(o.id, -8);
+    addNews(`👑 <b>I ${esc(teamName(t))} sono tuoi al 100%.</b> Da proprietario decidi tu chi gioca lì, ma le altre squadre parlano di conflitto d'interessi.`, 'gold');
+  }
   return { msg: `Ora possiedi il ${S.stakes[tid]}% dei ${t.name}.`, type: 'good' };
 }
 function payDividends() {
@@ -1942,7 +1971,9 @@ function developPlayer(p) {
   if (amb && p.age <= 30 && chance(0.5)) d += 1;
   if (sat) d = d > 0 ? d * 0.6 : d * 1.3;
   if (hasTrait(p, 'festaiolo') && chance(0.3)) d -= 1;
-  if (p.campBoost) { d = d < 0 ? d * (p.campBoost === true ? 0.5 : p.campBoost) : d; p.campBoost = false; } // il camp estivo frena il declino
+  // il camp estivo, il centro di allenamento e lo staff personale frenano il declino (ma nessuno ferma il tempo)
+  if (d < 0) d *= Math.max(0.35, careFactor(p) * (p.campBoost ? (p.campBoost === true ? 0.5 : p.campBoost) : 1));
+  p.campBoost = false;
   p.ovr = clamp(Math.round(p.ovr + d), 35, 99);
   p.potNote = null;
   if (amb && p.age <= 29 && chance(0.45)) { p.pot += randi(1, 3); p.potNote = 'up'; }
@@ -1950,6 +1981,20 @@ function developPlayer(p) {
   capPot(p);
 }
 // Un infortunio lungo fa perdere un po' di forma, che si recupera piano piano. Lo stakanovista no.
+// quanto un cliente è protetto: 1 = come tutti, più basso = meno infortuni e declino più lento
+// staff personale (preparatore, fisioterapista, chef): costa ogni settimana, in base allo stipendio
+const pstaffCost = p => Math.round((6000 + (p.salary || 0) * 1e6 * 0.0004) / 100) * 100;
+const pstaffWeekly = () => S ? clients().filter(p => p.pstaff).reduce((s, p) => s + pstaffCost(p), 0) : 0;
+function togglePstaff(pid) {
+  const p = P(pid);
+  p.pstaff = !p.pstaff;
+  if (p.pstaff) p.morale = clamp(p.morale + 6, 0, 100);
+  return { msg: p.pstaff ? `${p.name} ha un preparatore, un fisioterapista e uno chef tutti per sé (${fmt$(pstaffCost(p))} a settimana).` : `Hai tolto lo staff personale a ${p.name}.`, type: p.pstaff ? 'good' : 'info' };
+}
+function careFactor(p) {
+  if (!isClient(p)) return 1;
+  return (1 - 0.1 * (S.staff.center || 0)) * (p.pstaff ? 0.65 : 1);
+}
 function injuryHit(p, weeks) {
   if (weeks < 3 || hasTrait(p, 'professionista')) return;
   const k = Math.min(4, Math.ceil(weeks / 5));
@@ -2087,6 +2132,7 @@ const GOALS = [
   ['legend', 'Reputazione 100: agente leggendario'],
   ['owner', 'Diventa socio di una squadra NBA'],
   ['majority', 'Compra il 51% di una squadra: sei il presidente'],
+  ['fullowner', 'Compra un\'intera squadra NBA'],
   ['homegrown', 'Crea un campione: un ragazzo della tua accademia arriva a 90'],
 ];
 // Ricompense degli obiettivi: più è difficile, più si vince
@@ -2104,6 +2150,7 @@ const GOAL_REWARDS = {
   legend: { cash: 1000, title: true },
   owner: { rep: 3, teamRel: 3 },
   majority: { cash: 2000, badge: true },
+  fullowner: { rep: 5 },
   homegrown: { cash: 1500, rep: 5, star: true },
 };
 function rewardText(r) {
@@ -2408,6 +2455,7 @@ const UI = {
       <div class="actions">
         ${offers ? `<button class="btn primary sm" onclick="UI.negotiation(${p.id})">Offerte (${offers})</button>` : ''}
         <button class="btn sm" onclick="UI.giftModal(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>${ic('heart')} Regalo</button>
+        <button class="btn sm" onclick="UI.careModal(${p.id})">${ic('star')} Cura e immagine</button>
         <button class="btn sm" onclick="UI.recModal(${p.id})">${ic('megaphone')} Consiglia</button>
         <button class="btn sm" onclick="UI.campModal(${p.id})" ${p.campSeason === S.season ? 'disabled' : ''}>${ic('dumbbell')} Camp</button>
         ${!p.school && p.ovr >= 62 ? `<button class="btn sm" onclick="UI.doSponsor(${p.id})" ${S.turn - (p.lastSponsorTry ?? -99) < 4 || p.sponsors.length >= 4 ? 'disabled' : ''} title="$10k · ${Math.round(sponsorChance(p) * 100)}%">💼 Cerca sponsor</button>` : ''}
@@ -2415,6 +2463,19 @@ const UI = {
       </div></div>`;
   },
   doContact(pid) { toast(contact(pid)); save(); this.render(); },
+  careModal(pid) {
+    const p = P(pid), cc = campaignCost(p), done = p.campaignSeason === S.season;
+    this.openModal(`<h3>Cura e immagine di ${esc(p.name)}</h3>
+      <div class="card care"><b>Staff personale</b><span class="small muted">Preparatore, fisioterapista e chef solo per lui: si fa male meno spesso, guarisce prima e da veterano cala più piano.</span>
+        <p>${p.pstaff ? `<span class="good">Attivo</span> · ${fmt$(pstaffCost(p))} a settimana` : `Costa ${fmt$(pstaffCost(p))} a settimana`}</p>
+        <button class="btn sm ${p.pstaff ? 'bad' : 'primary'}" onclick="UI.doPstaff(${pid})">${p.pstaff ? 'Toglilo' : 'Assumilo'}</button></div>
+      <div class="card care"><b>Campagna d'immagine</b><span class="small muted">Uno studio di comunicazione lavora su di lui per tutta la stagione: interviste, spot, un documentario. Sale la popolarità e gli sponsor pagano di più. Utile prima di un rinnovo.</span>
+        <p>${done ? '<span class="good">Già fatta in questa stagione</span>' : `Costa ${fmt$(cc)}`}</p>
+        <button class="btn sm primary" onclick="UI.doCampaign(${pid})" ${done || S.cash < cc ? 'disabled' : ''}>Lancia la campagna</button></div>
+      <div class="actions"><button class="btn" onclick="UI.closeModal()">Chiudi</button></div>`);
+  },
+  doPstaff(pid) { const r = togglePstaff(pid); save(); this.render(); this.careModal(pid); toast(r.msg, r.type); },
+  doCampaign(pid) { const r = imageCampaign(pid); save(); this.render(); this.careModal(pid); toast(r.msg, r.type, r.type === 'good' ? 'Campagna lanciata' : undefined); },
   giftModal(pid) {
     const p = P(pid);
     this.openModal(`<h3>Un pensiero per ${esc(p.name)}</h3>
@@ -2585,7 +2646,10 @@ const UI = {
         <p class="small muted">Organizzare l'incontro costa ${fmt$(cost)}. Contano la tua reputazione, il legame con lui e se ha già un agente.</p>
         ${blocked ? `<p class="bad">${blocked}</p>` : ''}
         <div class="actions"><button class="btn primary" onclick="UI.doStartTalk(${pid})" ${blocked ? 'disabled' : ''}>Chiedi un incontro (${fmt$(cost)})</button>
-        <button class="btn" onclick="UI.closeModal()">Annulla</button></div>`);
+        <button class="btn" onclick="UI.closeModal()">Annulla</button></div>
+        <div class="lux"><b>Incontro di lusso</b><span class="small muted">Lo vai a prendere con un jet privato e lo porti a cena in un resort con la famiglia.</span>
+          <div class="tk-odds"><span>Probabilità che accetti</span><b class="${luxChance(p) > .6 ? 'good' : luxChance(p) > .3 ? 'warn' : 'bad'}">${Math.round(luxChance(p) * 100)}%</b></div>
+          <button class="btn sm" onclick="UI.doStartTalk(${pid}, true)" ${blocked || S.cash < luxCost(p) ? 'disabled' : ''}>Organizza (${fmt$(luxCost(p))})</button></div>`);
     }
     const hearts = '<i class="pip"></i>'.repeat(Math.max(0, t.patience)) + '<i class="pip off"></i>'.repeat(Math.max(0, t.max - t.patience));
     const sug = { comm: Math.min(4, t.ask.comm + 0.5), bonus: Math.max(0, Math.round(t.ask.bonus * 0.8 / 5) * 5) };
@@ -2607,8 +2671,8 @@ const UI = {
         <button class="btn bad" onclick="UI.doTalkQuit(${pid})">Lascia perdere</button>
       </div>`);
   },
-  doStartTalk(pid) {
-    const r = startTalk(pid); save(); this.render();
+  doStartTalk(pid, lux = false) {
+    const r = startTalk(pid, lux); save(); this.render();
     if (r.ok) { toast(`${P(pid).name} ha accettato di incontrarti!`, 'good', 'Si tratta!'); this.pitchModal(pid); }
     else { this.closeModal(); toast(r.msg, r.type); }
   },
@@ -2744,6 +2808,7 @@ const UI = {
       </dl>
       <div class="actions">
         ${mine ? `<button class="btn sm" onclick="UI.giftModal(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>${ic('heart')} Regalo</button>
+        <button class="btn sm" onclick="UI.careModal(${p.id})">${ic('star')} Cura e immagine</button>
           <button class="btn sm" onclick="UI.recModal(${p.id})">${ic('megaphone')} Consiglia a una squadra</button>
           <button class="btn sm" onclick="UI.campModal(${p.id})" ${p.campSeason === S.season ? 'disabled' : ''}>${ic('dumbbell')} Camp con una leggenda</button>
           <button class="btn bad sm" onclick="UI.release(${p.id})">Interrompi rapporto</button>`
@@ -2844,7 +2909,7 @@ const UI = {
           <p>${k === 'informer' ? `<b>${INFORMER_LV[lvl]}</b>` : `Livello <b>${lvl}</b> / 5`} ${'★'.repeat(lvl)}${'☆'.repeat(5 - lvl)}</p>
           ${lvl < 5 && net - staffStep(k) < 0 ? `<p class="small bad">Con questo livello andresti in perdita di ${fmt$(staffStep(k) - net)} a settimana.</p>` : ''}
           ${k === 'academy' && !lvl && S.rep < ACADEMY_REP ? `<p class="small muted">Per aprirla serve una reputazione di almeno ${ACADEMY_REP}: le famiglie affidano i figli solo a un agente con un nome.</p>` : ''}
-          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost || (k === 'academy' && !lvl && S.rep < ACADEMY_REP) ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
+          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost || (k === 'academy' && !lvl && S.rep < ACADEMY_REP) ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : k === 'center' && !lvl ? 'Costruiscilo' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
       }).join('')}</div>
       <h2>Banca</h2>
       <div class="card bank">${S.loan ? `<p>Prestito di <b>${fmt$(S.loan.amount)}</b> al ${S.loan.rate}% l'anno. Rata <b>${fmt$(S.loan.perWeek)}</b> a settimana. Debito che resta: <b>${fmt$((fixLoan(), S.loan.balance))}</b>.</p>
@@ -2852,7 +2917,7 @@ const UI = {
         : `<p class="muted small">La banca ti può prestare fino a <b>${fmt$(loanOffer().max)}</b>, da restituire a rate in qualche stagione. Più sei famoso, meno interessi paghi.</p>
         <button class="btn sm" onclick="UI.loanModal()">Chiedi un prestito</button>`}</div>
       <h2>Investimenti</h2>
-      <p class="muted small">Quando l'agenzia è grande, i soldi servono a crescere ancora. Ogni 5% di una squadra rende il 4% l'anno in dividendi, migliora il rapporto con lei e le sue offerte ai tuoi clienti. Con il 51% diventi presidente.</p>
+      <p class="muted small">Quando l'agenzia è grande, i soldi servono a crescere ancora. Ogni 5% di una squadra rende il 4% l'anno in dividendi, migliora il rapporto con lei e le sue offerte ai tuoi clienti. Con il 51% diventi presidente. Con il 100% la squadra è tua: decidi tu chi ci gioca, ma le altre squadre e le agenzie rivali parlano di conflitto d'interessi.</p>
       ${Object.keys(S.stakes || {}).length ? `<div class="rels">${Object.entries(S.stakes).map(([tid, pct]) => `<span class="rel">${esc(teamName(S.teams[tid]))} <b>${pct}%</b></span>`).join('')}</div>` : ''}
       <div class="lev-row" style="margin:10px 0">
         <select id="stake-team" aria-label="Squadra">${[...S.teams].sort((a, b) => stakePrice(a) - stakePrice(b)).map(t => `<option value="${t.id}">${esc(teamName(t))} · 5% a ${fmt$(stakePrice(t))}${stakeOf(t.id) ? ` (hai il ${stakeOf(t.id)}%)` : ''}</option>`).join('')}</select>
@@ -2934,11 +2999,11 @@ const Tutorial = {
     { t: 't-chal', h: 'Sfide della stagione', x: 'Ogni stagione arrivano 3 sfide nuove, sempre un po\' più difficili, con un premio in soldi e reputazione. Gli <b>obiettivi</b> qui sotto invece sono traguardi di carriera, una volta sola.' },
     { t: null, h: 'Il carattere', x: 'Ogni giocatore ha il suo carattere e la sua storia, e il carattere si vede in quello che combina: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Conta anche negli affari: un leale è difficile da portarti via, uno attaccato ai soldi chiede di più.' },
     { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
-    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: tratti stipendio e anni, guardi cosa preferisce il giocatore e puoi giocare la carta dell\'<b>asta</b> (occhio ai bluff). Le offerte scadono! Fagli un <b>Regalo</b> per tenerli contenti, <b>Camp</b> per farli allenare con una leggenda e <b>Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
+    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: tratti stipendio e anni, guardi cosa preferisce il giocatore e puoi giocare la carta dell\'<b>asta</b> (occhio ai bluff). Le offerte scadono! Fagli un <b>Regalo</b> per tenerli contenti, <b>Camp</b> per farli allenare con una leggenda, <b>Cura e immagine</b> per dargli uno staff personale o lanciare una campagna, e <b>Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
     { t: 'tab-market', h: 'Mercato', x: 'Qui trovi nuovi clienti: <b>prospetti</b> del college, <b>free agent</b> e giocatori di altre agenzie. Con <b>🔭 Osserva</b> scopri il loro potenziale, con <b>🤝 Coltiva</b> crei un legame prima del Draft. <b>Proponi</b> chiede un incontro: se accetta inizia una vera trattativa. Tu offri commissione, bonus e <b>promesse</b> da mantenere; lui fa una controfferta e ha una pazienza di 2-5 🏀.' },
     { t: null, h: 'Il Draft', x: 'Puoi <b>consigliare</b> un prospetto a una squadra: se ti danno retta, lo sceglieranno al Draft se è ancora libero al loro turno. Più è buono il rapporto con la squadra, più ti ascoltano. E un ragazzo a cui sei molto legato può sceglierti come agente da solo, prima del Draft.' },
     { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre col tuo rapporto con ognuna, i rapporti con gli sponsor, i migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
-    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Qui assumi anche l\'<b>🕵️ informatore</b>, ingrandisci la <b>🏙️ sede</b> e apri un\'<b>🎓 accademia</b> che ti porta ogni anno ragazzi già legati a te. Ogni livello aumenta le spese settimanali.' },
+    { t: 'tab-staff', h: 'Staff', x: 'Investi in scout, avvocati, marketing e uffici. Qui assumi anche l\'<b>🕵️ informatore</b>, ingrandisci la <b>🏙️ sede</b> e apri un\'<b>🎓 accademia</b> che ti porta ogni anno ragazzi già legati a te. Più avanti puoi costruire un <b>centro di allenamento</b> per i tuoi clienti, comprare quote delle squadre e perfino una squadra intera. Ogni livello aumenta le spese settimanali.' },
     { t: 't-help', h: 'Tocca a te!', x: 'Puoi rivedere questo tutorial quando vuoi dal pulsante <b>?</b>. Primo consiglio: vai nel <b>Mercato</b>, chiedi un incontro a un free agent e chiudi la trattativa. In bocca al lupo!' },
   ],
   start() {

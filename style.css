@@ -656,3 +656,9 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .gift b { font-size: 14.5px; } .gift small { grid-column: 1; color: var(--muted); font-size: 12.5px; } .gift small.good { color: var(--good); }
 .gift span { grid-column: 2; grid-row: 1 / span 3; align-self: center; font-weight: 800; color: var(--accent); }
 .gift:disabled { opacity: .45; }
+
+/* cura e immagine, incontro di lusso */
+.card.care { display: grid; gap: 6px; margin: 10px 0; justify-items: start; }
+.card.care p { margin: 0; }
+.lux { display: grid; gap: 6px; margin-top: 14px; padding: 12px; border-radius: 12px; border: 1px dashed var(--gold); background: #2a2210; justify-items: start; }
+.lux .tk-odds { width: 100%; }
