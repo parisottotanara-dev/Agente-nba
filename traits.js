@@ -189,7 +189,7 @@ function storyOf(p) {
     if (r < 0.3) parts = [origin(), pickFresh('start', STORY.start), tl()];
     else if (r < 0.55) parts = [said(), tl(), pickFresh('quirk', STORY.quirk)];
     else if (r < 0.75) parts = [pickFresh('start', STORY.start), said()];
-    else if (r < 0.9) parts = [tl(), `Segno particolare: ${pickFresh('quirk', STORY.quirk).replace(/^./, c => c.toLowerCase())}`];
+    else if (r < 0.9) parts = [tl(), pickFresh('quirk', STORY.quirk)];
     else parts = [origin(), tl(), pickFresh('dream', STORY.dream)];
     p.story = parts.join(' ');
   }

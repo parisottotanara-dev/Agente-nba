@@ -66,11 +66,13 @@ const isClient = p => S.clients.includes(p.id);
 const seasonLabel = () => `${S.season}-${String((S.season + 1) % 100).padStart(2, '0')}`;
 const capacity = () => 4 + S.staff.office * 3;
 
+// quanto piace alle squadre al di là dei numeri: fisso per ogni giocatore
+const newAppeal = () => Math.round((Math.random() + Math.random() - 1) * 12) / 100;
 function newPlayer(kind) {
   const age = kind === 'prospect' ? randi(18, 22) : randi(21, 34);
   const p = {
     id: S.nextId++, name: `${pick(FIRST)} ${pick(LAST)}`, pos: pick(POS), age,
-    ovr: 60, pot: 70, team: null, salary: 0, years: 0, comm: 3, morale: 70, hype: 10,
+    ovr: 60, pot: 70, team: null, salary: 0, years: 0, comm: 3, morale: 70, hype: 10, appeal: newAppeal(),
     agency: null, noise: gauss(), noise2: gauss(), teamNoise: gauss(), scouted: false,
     injury: 0, sponsors: [], refusals: 0, lockedUntil: 0, lastPitch: -1, lastContact: -1,
     gp: 0, pts: 0, reb: 0, ast: 0, school: null, rookieSeason: null,
@@ -91,7 +93,11 @@ function marketValue(p) {
   if (p.age < 25) o += (p.pot - p.ovr) * 0.15;
   if (p.age > 31) o -= (p.age - 31) * 1.3;
   const x = clamp((o - 58) / 37, 0, 1.15);
-  return clamp(r1(MIN_SAL + 54 * Math.pow(x, 2.1)), MIN_SAL, MAX_SAL);
+  // conta anche quanto è famoso, come gioca davvero e quanto piace alle squadre (ognuno ha il suo mercato)
+  const ppg = p.gp >= 10 ? p.pts / p.gp : null;
+  const prod = ppg == null ? 0 : clamp((ppg - Math.max(2, (p.ovr - 45) * 0.42)) / 60, -0.08, 0.1);
+  const fame = clamp(((p.hype || 0) - 25) / 500, -0.04, 0.12);
+  return clamp(r1((MIN_SAL + 54 * Math.pow(x, 2.1)) * (1 + (p.appeal || 0) + prod + fame)), MIN_SAL, MAX_SAL);
 }
 
 function scoutSD() { return Math.max(1.5, 9 - S.staff.scout * 1.5); }
@@ -171,7 +177,7 @@ function newGame(agencyName, agentName) {
   genDraftClass();
   // clienti iniziali
   const vet = newPlayer('pro');
-  Object.assign(vet, { age: 26, ovr: 71, team: randi(0, 29), years: 2, comm: 3, morale: 75 });
+  Object.assign(vet, { age: randi(24, 29), ovr: randi(68, 73), team: randi(0, 29), years: 2, comm: 3, morale: 75 });
   growPot(vet); vet.salary = r1(marketValue(vet)); vet.career.seasons = 4;
   S.players[vet.id] = vet; S.clients.push(vet.id);
   const kid = newPlayer('prospect');
@@ -305,40 +311,49 @@ function loanOffer() {
   const rate = r1(clamp(14 - S.rep * 0.08 - (S.loansRepaid || 0) * 0.5, 5, 14));
   return { max, rate };
 }
+// rata costante: ogni settimana paghi gli interessi sul debito che resta più una parte del capitale
 function loanPlan(amount, years) {
-  const { rate } = loanOffer(), total = Math.round(amount * (1 + rate / 100 * years));
-  return { rate, total, perWeek: Math.ceil(total / (years * TURNS_PER_YEAR) / 100) * 100 };
+  const { rate } = loanOffer(), n = years * TURNS_PER_YEAR, r = rate / 100 / TURNS_PER_YEAR;
+  const perWeek = Math.ceil(amount * r / (1 - Math.pow(1 + r, -n)) / 10) * 10;
+  return { rate, perWeek, total: perWeek * n };
 }
-const loanRate = () => S.loan ? Math.min(S.loan.perWeek, S.loan.left) : 0;
+function fixLoan() { // prestiti presi con la versione precedente
+  const L = S.loan; if (!L || L.balance != null) return;
+  L.balance = Math.round(L.amount * L.left / (L.total || L.left));
+  L.weeksLeft = Math.max(1, Math.round(L.left / L.perWeek));
+}
+const loanRate = () => { if (!S.loan) return 0; fixLoan(); return Math.min(S.loan.perWeek, Math.round(S.loan.balance * (1 + S.loan.rate / 100 / TURNS_PER_YEAR))); };
 function takeLoan(amount, years) {
   if (S.loan) return { msg: 'Hai già un prestito in corso: prima finisci di pagarlo.', type: 'bad' };
   const { max } = loanOffer();
   amount = clamp(Math.round(amount / 1000) * 1000, 50000, max); years = clamp(Math.round(years), 2, 5);
   const pl = loanPlan(amount, years);
-  S.loan = { amount, years, rate: pl.rate, total: pl.total, left: pl.total, perWeek: pl.perWeek, season: S.season };
+  S.loan = { amount, years, rate: pl.rate, perWeek: pl.perWeek, balance: amount, weeksLeft: years * TURNS_PER_YEAR, season: S.season };
   S.cash += amount; // non è un guadagno: non conta nelle entrate della stagione
   changeRep(-0.5);
-  addNews(`🏦 La banca ti presta ${fmt$(amount)}: rata di ${fmt$(pl.perWeek)} a settimana per ${years} stagioni (${pl.rate}% l'anno).`, 'warn');
+  addNews(`🏦 La banca ti presta ${fmt$(amount)} al ${pl.rate}% l'anno: rata di ${fmt$(pl.perWeek)} a settimana per ${years} stagioni.`, 'warn');
   return { msg: `Ricevuti ${fmt$(amount)}. Rata: ${fmt$(pl.perWeek)} a settimana.`, type: 'good' };
 }
 function payLoanWeek() {
   if (!S.loan) return;
-  const pay = loanRate(); spend(pay); S.loan.left -= pay;
-  if (S.loan.left <= 0) {
+  fixLoan();
+  const L = S.loan, interest = L.balance * L.rate / 100 / TURNS_PER_YEAR, pay = loanRate();
+  spend(pay); L.balance = Math.max(0, Math.round(L.balance + interest - pay)); L.weeksLeft--;
+  if (L.balance <= 0) {
     S.loan = null; S.loansRepaid = (S.loansRepaid || 0) + 1; changeRep(0.5);
     addNews('🏦 Hai finito di pagare il prestito. In banca adesso ti salutano con un sorriso.', 'good');
   }
 }
+// chiuderlo prima: paghi il debito che resta più una piccola penale
+const loanPayoff = () => { if (!S.loan) return 0; fixLoan(); return Math.round(S.loan.balance * 1.02 / 100) * 100; };
 function repayLoan() {
   if (!S.loan) return;
-  // chiudendolo prima paghi il capitale che resta più una piccola penale
   const cost = loanPayoff();
   if (S.cash < cost) return { msg: `Per chiudere il prestito servono ${fmt$(cost)}.`, type: 'bad' };
   spend(cost); S.loan = null; S.loansRepaid = (S.loansRepaid || 0) + 1; changeRep(0.5);
   addNews(`🏦 Hai chiuso in anticipo il prestito pagando ${fmt$(cost)}.`, 'good');
   return { msg: `Prestito chiuso con ${fmt$(cost)}.`, type: 'good' };
 }
-const loanPayoff = () => S.loan ? Math.round(S.loan.amount * S.loan.left / (S.loan.total || S.loan.left) * 1.03 / 100) * 100 : 0;
 function weeklyIncomeEstimate() {
   let inc = 0;
   for (const p of clients()) {
@@ -2063,7 +2078,8 @@ function toast(msg, type, title) {
   const el = document.getElementById('toast');
   msg = String(msg);
   type = type || (/^✅/.test(msg) ? 'good' : /^❌/.test(msg) ? 'bad' : /^🏅/.test(msg) ? 'goal' : /insufficient|Servono|non hai abbastanza/i.test(msg) ? 'bad' : 'info');
-  el.className = 'toast arc ' + type;
+  const modalOpen = !document.getElementById('modal').classList.contains('hidden');
+  el.className = 'toast arc ' + type + (modalOpen ? ' low' : '');
   el.setAttribute('role', 'status');
   el.innerHTML = `<b>${esc(title || TOAST_TITLES[type])}</b><span>${esc(msg.replace(EMO_RE, ''))}</span>`;
   void el.offsetWidth; el.classList.add('show'); toastAt = Date.now();
@@ -2667,7 +2683,7 @@ const UI = {
           ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
       }).join('')}</div>
       <h2>Banca</h2>
-      <div class="card bank">${S.loan ? `<p>Prestito di <b>${fmt$(S.loan.amount)}</b> al ${S.loan.rate}% l'anno. Rata <b>${fmt$(S.loan.perWeek)}</b> a settimana, restano da pagare <b>${fmt$(S.loan.left)}</b>.</p>
+      <div class="card bank">${S.loan ? `<p>Prestito di <b>${fmt$(S.loan.amount)}</b> al ${S.loan.rate}% l'anno. Rata <b>${fmt$(S.loan.perWeek)}</b> a settimana. Debito che resta: <b>${fmt$((fixLoan(), S.loan.balance))}</b>.</p>
         <button class="btn sm" onclick="UI.doRepayLoan()" ${S.cash < loanPayoff() ? 'disabled' : ''}>Chiudilo subito (${fmt$(loanPayoff())})</button>`
         : `<p class="muted small">La banca ti può prestare fino a <b>${fmt$(loanOffer().max)}</b>, da restituire a rate in qualche stagione. Più sei famoso, meno interessi paghi.</p>
         <button class="btn sm" onclick="UI.loanModal()">Chiedi un prestito</button>`}</div>
@@ -2701,7 +2717,7 @@ const UI = {
     const need = Math.max(50, Math.ceil((-S.cash + weeklyCost() * 6) / 50000) * 50);
     const v = Math.min(max / 1000, need);
     this.openModal(`<h3>Prestito dalla banca</h3>
-      <p class="small">Con la tua reputazione la banca ti presta fino a <b>${fmt$(max)}</b> al <b>${rate}%</b> l'anno. Lo restituisci a rate ogni settimana.</p>
+      <p class="small">Con la tua reputazione la banca ti presta fino a <b>${fmt$(max)}</b> al <b>${rate}%</b> l'anno. Lo restituisci a rate ogni settimana e puoi chiuderlo prima quando vuoi.</p>
       <div class="neg-form">
         <div class="lbl">Quanto chiedi${stepper('loan-a', v, 50, 50, max / 1000, 'k')}</div>
         <label>In quante stagioni lo restituisci<select id="loan-y" onchange="UI.loanCalc()">${[2, 3, 4, 5].map(y => `<option value="${y}" ${y === 3 ? 'selected' : ''}>${y} stagioni</option>`).join('')}</select></label>
@@ -2714,7 +2730,7 @@ const UI = {
   loanCalc() {
     const a = (+document.getElementById('loan-a').value || 0) * 1000, y = +document.getElementById('loan-y').value;
     const pl = loanPlan(a, y), el = document.getElementById('loan-sum');
-    if (el) el.innerHTML = `Rata: <b>${fmt$(pl.perWeek)}</b> a settimana per ${y} stagioni. In tutto restituisci <b>${fmt$(pl.total)}</b>.`;
+    if (el) el.innerHTML = `Rata: <b>${fmt$(pl.perWeek)}</b> a settimana per ${y} stagioni. In tutto restituisci <b>${fmt$(pl.total)}</b>, di cui ${fmt$(pl.total - a)} di interessi.`;
   },
   doLoan() {
     const r = takeLoan((+document.getElementById('loan-a').value || 0) * 1000, +document.getElementById('loan-y').value);
@@ -2818,6 +2834,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { for (const p of Object.values(S.players)) if (p.appeal == null) p.appeal = newAppeal(); S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();

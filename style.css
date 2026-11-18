@@ -603,3 +603,9 @@ div.rules p { margin: 0 0 10px; }
 .debt-box span { font-size: 13.5px; }
 .bank p { margin: 0 0 10px; }
 .loan-sum { margin: 12px 0 4px; font-size: 14px; }
+
+.toast.arc.low { top: auto; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+.toast.arc.low.hidden { transform: translate(-50%, 16px); }
+/* titolo sopra, messaggio sotto: niente testo tagliato */
+.toast.arc { flex-direction: column; align-items: center; gap: 2px; text-align: center; padding: 7px 16px 9px; max-width: min(400px, 92vw); }
+.toast.arc span { white-space: normal; -webkit-line-clamp: 3; }
