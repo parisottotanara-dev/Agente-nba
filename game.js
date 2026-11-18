@@ -359,9 +359,9 @@ function simWeekGames() {
   // statistiche individuali
   recInit();
   for (const p of clients()) p.week = null;
-  const MIN = [34, 33, 31, 29, 27, 24, 20, 16, 12, 8, 5, 3, 2, 1, 1];
+  rotationNews();
   for (const t of S.teams) {
-    const r = rosterOf(t.id).filter(p => !p.injury).sort((a, b) => b.ovr - a.ovr);
+    const r = rosterOf(t.id).filter(p => !p.injury).sort(rotCmp);
     r.forEach((p, i) => {
       const m = MIN[i] ?? 0; if (!m) return;
       const f = m / 36, q = Math.max(1, p.ovr - 40);
@@ -390,6 +390,41 @@ function simWeekGames() {
       if (mine && !p.week.length) p.week = null;
       if (mine && p.week) p.last = p.week[p.week.length - 1];
     });
+  }
+}
+/* ---------- Rotazione: chi gioca e quanto ----------
+   In ogni squadra gioca di più chi ha la valutazione più alta tra i sani.
+   Se si fa male uno davanti a te, sali di un posto e giochi più minuti. */
+const MIN = [34, 33, 31, 29, 27, 24, 20, 16, 12, 8, 5, 3, 2, 1, 1];
+const rotCmp = (a, b) => b.ovr - a.ovr || a.id - b.id;
+// posto in rotazione (0 = il migliore) che avrebbe p in quella squadra; healthy: conta solo i sani
+function rotIndex(p, tid, healthy = true) {
+  return rosterOf(tid).filter(x => x.id !== p.id && (!healthy || !x.injury) && rotCmp(x, p) < 0).length;
+}
+const ROLE_NAMES = ['in quintetto', 'in quintetto', 'in quintetto', 'in quintetto', 'in quintetto', 'sesto uomo', 'settimo uomo', 'ottavo uomo', 'nona scelta dalla panchina', 'decima scelta dalla panchina'];
+const roleName = i => ROLE_NAMES[i] || 'fondo panchina';
+const roleMin = i => MIN[i] || 0;
+// testo del ruolo, con la nota sugli infortuni: "sesto uomo · ~24 min (in quintetto finché X è fermo)"
+function roleTxt(p, tid) {
+  const now = rotIndex(p, tid, true), full = rotIndex(p, tid, false);
+  let s = `${roleName(now)} · ~${roleMin(now)} min`;
+  if (now < full) {
+    const hurt = rosterOf(tid).filter(x => x.id !== p.id && x.injury && rotCmp(x, p) < 0).sort(rotCmp).map(x => x.name.split(' ').slice(-1)[0]);
+    const who = `${hurt.slice(0, 2).join(' e ')} ${hurt.length > 1 ? 'sono fermi' : 'è fermo'}`;
+    s += roleName(full) !== roleName(now) ? ` finché ${who}, poi ${roleName(full)}` : ` finché ${who}, poi ~${roleMin(full)} min`;
+  }
+  return s;
+}
+// avvisa quando un tuo cliente sale (o torna giù) per un infortunio in squadra
+function rotationNews() {
+  for (const p of clients()) {
+    if (p.team == null || p.injury) { p.roleIdx = null; continue; }
+    const now = rotIndex(p, p.team, true), full = rotIndex(p, p.team, false), was = p.roleIdx;
+    if (was != null && now !== was && roleName(now) !== roleName(was)) {
+      if (now < was && now < full) addNews(`🔥 Infortunio nei ${esc(teamOf(p).name)}: <b>${esc(p.name)}</b> ora è ${roleName(now)} (circa ${roleMin(now)} minuti a partita).`, 'good');
+      else if (now > was && full >= now) addNews(`🔁 Rientrano gli infortunati dei ${esc(teamOf(p).name)}: ${esc(p.name)} torna ${roleName(now)}.`);
+    }
+    p.roleIdx = now;
   }
 }
 const teamRank = tid => standings().findIndex(t => t.id === tid) + 1;
@@ -626,11 +661,14 @@ function talkOffer(pid, comm, bonus, promises = []) {
   if (bonus * 1000 > S.cash) return { msg: `Non hai $${bonus}k da dare alla firma.`, type: 'bad' };
   t.log.push(`➡️ Offri ${talkTxt({ comm, bonus })}${promises.length ? ` e prometti: ${promises.map(k => PROMISES[k].label.toLowerCase()).join(', ')}` : ''}.`);
   // quanto è lontana l'offerta da ciò che vuole davvero (le promesse accorciano la distanza)
-  const gap = Math.max(0, comm - t.want.comm) * 30 + Math.max(0, t.want.bonus - bonus) / Math.max(20, t.want.bonus) * 30 - promiseValue(p, promises);
+  // un bonus sopra il suo minimo compensa un po' la commissione alta: al massimo mezzo punto (15)
+  const commGap = Math.max(0, comm - t.want.comm) * 30;
+  const credit = Math.min(15, commGap, Math.max(0, bonus - t.want.bonus) / Math.max(40, t.want.bonus) * 15);
+  const gap = commGap - credit + Math.max(0, t.want.bonus - bonus) / Math.max(20, t.want.bonus) * 30 - promiseValue(p, promises);
   if (gap <= 0) return talkSign(pid, comm, bonus, promises);
   t.patience -= gap > 30 ? 2 : 1;
   // se superi il suo limite può alzarsi e andarsene: più lo superi, più è probabile
-  const walk = clamp(Math.max(0, comm - t.want.comm) / 0.5 * 0.2 + (bonus < t.want.bonus ? 0.05 : 0), 0, 0.6);
+  const walk = clamp((commGap - credit) / 15 * 0.2 + (bonus < t.want.bonus ? 0.05 : 0), 0, 0.6);
   if (t.patience > 0 && chance(walk)) t.patience = 0;
   if (t.patience <= 0) {
     delete S.talks[pid];
@@ -648,7 +686,7 @@ function talkOffer(pid, comm, bonus, promises = []) {
   } else {
     // si avvicina a te, ma mai oltre quello che vuole davvero
     t.ask = { comm: Math.max(t.ask.comm, Math.min(t.want.comm, roundHalf((t.ask.comm + comm) / 2))), bonus: Math.min(t.ask.bonus, Math.max(t.want.bonus, r5((t.ask.bonus + bonus) / 2))) };
-    mood = '🤔 Ci pensa.';
+    mood = credit > 0 ? '🤔 Il bonus lo tenta, ma la commissione gli sembra ancora alta.' : '🤔 Ci pensa.';
   }
   // un'agenzia rivale si intromette
   if (chance(rivalCut(p))) {
@@ -1162,8 +1200,8 @@ function teamFit(p, tid, salary) {
     return [k <= 8 ? 1 : k <= 16 ? 0.3 : k <= 22 ? -0.4 : -1, early ? `${k}ª rosa più forte della lega` : `squadra ${k}ª in classifica`];
   }
   if (pr === 'citta') return [t.market >= 0.75 ? 1 : t.market >= 0.5 ? 0.3 : t.market >= 0.3 ? -0.4 : -1, t.market >= 0.75 ? 'grande città' : t.market >= 0.5 ? 'città media' : 'città piccola'];
-  const better = rosterOf(tid).filter(x => x.id !== p.id && x.ovr > p.ovr).length;
-  return [better <= 2 ? 1 : better <= 5 ? 0.4 : better <= 8 ? -0.3 : -1, better <= 2 ? 'sarebbe titolare' : better <= 5 ? 'avrebbe tanti minuti' : better <= 8 ? 'avrebbe pochi minuti' : 'starebbe in panchina'];
+  const i = rotIndex(p, tid, false);
+  return [i <= 4 ? 1 : i <= 6 ? 0.4 : i <= 8 ? -0.3 : -1, `sarebbe ${roleTxt(p, tid)}`];
 }
 const fitIcon = f => `<i class="dot ${f >= 0.6 ? 'good' : f >= 0 ? 'warn' : 'bad'}"></i>`;
 // Il valore di mercato non si conosce con precisione: una forbice che l'ufficio legale restringe
@@ -2214,7 +2252,7 @@ const UI = {
     else if (p.injDebt) meta = `🩹 Sta tornando in forma (−${p.injDebt} di valutazione per qualche settimana)`;
     else if (p.school) { const pr = draftProjection(p); meta = `🎓 ${esc(p.school)} · proiezione Draft <b>#${pr}</b>${p.promise != null ? ` · 📣 promesso ai ${esc(S.teams[p.promise].name)}` : ''}`; }
     else if (!t) { const n = S.offers.filter(o => o.pid === p.id).length; meta = `🆓 Senza squadra${n ? ` · <b>${n} offert${n > 1 ? 'e' : 'a'}</b>` : ''}`; }
-    else meta = `${ng ? `📅 Prossima: <b>${esc(ng)}</b> · ` : ''}🏆 ${teamRank(t.id)}ª in classifica (${t.w}-${t.l})`;
+    else meta = `${ng ? `📅 Prossima: <b>${esc(ng)}</b> · ` : ''}🏆 ${teamRank(t.id)}ª in classifica (${t.w}-${t.l})<br>Ruolo: <b>${roleTxt(p, t.id)}</b>`;
     const stats = t && p.gp ? `<div class="pl-stats"><span><b>${r1(avg(p, 'min'))}</b>MIN</span><span><b>${r1(avg(p, 'pts'))}</b>PTS</span><span><b>${r1(avg(p, 'reb'))}</b>REB</span><span><b>${r1(avg(p, 'ast'))}</b>AST</span></div>` : '';
     return `<button class="pl" onclick="UI.player(${p.id})">
       ${avatarSVG(p, 52)}
@@ -2281,7 +2319,7 @@ const UI = {
       </div>
       <div class="promises"><b>🤝 Promesse</b> <span class="small muted">valgono come moneta, ma vanno mantenute entro fine stagione regolare</span>
         ${Object.entries(PROMISES).filter(([k]) => promiseFeasible(p, k)).map(([k, pr]) => `<label class="pr-row"><input type="checkbox" id="tk-pr-${k}"><span>${pr.label}${pr.likes.some(t => hasTrait(p, t)) ? ' <span class="good small">· gli piace molto</span>' : ''}</span></label>`).join('')}</div>
-      <p class="small muted">Più commissione chiedi, più guadagni ogni anno, ma più si irrita. Se tiri troppo si offende e chiede di più. Un'agenzia rivale può sempre intromettersi: non tirarla per le lunghe.</p>
+      <p class="small muted">Più commissione chiedi, più guadagni ogni anno, ma più si irrita. Un bonus più ricco di quello che vuole compensa un po' (al massimo mezzo punto di commissione). Se tiri troppo si offende e chiede di più. Un'agenzia rivale può sempre intromettersi: non tirarla per le lunghe.</p>
       <div class="actions">
         <button class="btn primary" onclick="UI.doTalkOffer(${pid})">Fai l'offerta</button>
         <button class="btn good" onclick="UI.doTalkAccept(${pid})">Accetta la sua richiesta</button>
@@ -2351,6 +2389,7 @@ const UI = {
       ${offers.map(o => { const [f, why] = teamFit(p, o.teamId, o.salary); const wl = weeksLeft(o); return `<div class="offer ${o.id === sel.id ? 'sel' : ''}" onclick="UI.negotiation(${pid}, ${o.id})" style="cursor:pointer">
         <div class="of-top"><b>${esc(teamName(S.teams[o.teamId]))}</b>${o.ext ? '<span class="tag">rinnovo</span>' : ''}${o.final ? '<span class="tag inj">offerta finale</span>' : ''}<span class="fit">${fitIcon(f)} ${esc(why)}</span></div>
         <div>${fmtM(o.salary)} × ${o.years} ann${o.years > 1 ? 'i' : 'o'} · totale ${fmtM(o.salary * o.years)}</div>
+        ${prefOf(p) === 'minuti' ? '' : `<div class="small role-line">Ruolo: <b>${roleTxt(p, o.teamId)}</b></div>`}
         <div class="small muted">Pazienza GM: <span class="patience">${'<i class="pip"></i>'.repeat(Math.max(0, o.patience))}${'<i class="pip off"></i>'.repeat(Math.max(0, 3 - o.patience))}</span> · rapporto ${relLabel(teamRel(o.teamId))}${wl != null ? ` · <span class="${wl <= 1 ? 'warn' : ''}">⏳ ${wl <= 1 ? 'scade questa settimana' : `ancora ${wl} settimane`}</span>` : ''}</div>
       </div>`; }).join('')}
       ${msg ? `<p class="warn">${esc(msg)}</p>` : ''}

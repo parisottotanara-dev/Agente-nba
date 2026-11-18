@@ -588,3 +588,5 @@ input, select, textarea { font-size: max(16px, 1em); }
 .neg-form .stepper .st-mid input, .lev-row .stepper .st-mid input { flex: none; border: none; padding: 0; background: transparent; border-radius: 6px; }
 .lev-row { flex-wrap: wrap; }
 .lev-row .stepper { flex: 1 1 200px; }
+
+.role-line { margin-top: 2px; color: var(--muted); } .role-line b { color: var(--text); font-weight: 600; }
