@@ -362,8 +362,10 @@ function simWeekGames() {
   rotationNews();
   for (const t of S.teams) {
     const r = rosterOf(t.id).filter(p => !p.injury).sort(rotCmp);
+    const dc = depthChart(t.id);
     r.forEach((p, i) => {
-      const m = MIN[i] ?? 0; if (!m) return;
+      const e = dc.get(p.id), m = e ? e.min : 0; if (!m) return;
+      const starter = e.slot === 'start';
       const f = m / 36, q = Math.max(1, p.ovr - 40);
       const rebK = { PG: .07, SG: .09, SF: .13, PF: .2, C: .24 }[p.pos];
       const astK = { PG: .2, SG: .11, SF: .09, PF: .06, C: .05 }[p.pos];
@@ -373,7 +375,7 @@ function simWeekGames() {
         const g2 = results[g][t.id];
         // minuti: variano partita per partita (falli, partite già decise, supplementari)
         const blow = Math.abs(g2.us - g2.them) >= 18;
-        const mins = clamp(Math.round(m * (1 + gauss() * 0.12) * (blow ? (i < 5 ? 0.85 : 1.6) : 1) + (chance(0.04) ? 5 : 0)), 0, 48);
+        const mins = clamp(Math.round(m * (1 + gauss() * 0.12) * (blow ? (starter ? 0.85 : e.slot === 'bench' ? 1.2 : 3) : 1) + (chance(0.04) ? 5 : 0)), 0, 48);
         if (!mins) continue;
         if (chance(p.age >= 31 ? 0.12 : 0.07)) continue; // riposo o acciacco: salta la partita
         const fg = mins / 36;
@@ -392,39 +394,76 @@ function simWeekGames() {
     });
   }
 }
-/* ---------- Rotazione: chi gioca e quanto ----------
-   In ogni squadra gioca di più chi ha la valutazione più alta tra i sani.
-   Se si fa male uno davanti a te, sali di un posto e giochi più minuti. */
-const MIN = [34, 33, 31, 29, 27, 24, 20, 16, 12, 8, 5, 3, 2, 1, 1];
+/* ---------- Gerarchie per ruolo: chi gioca e quanto ----------
+   Ogni ruolo (play, guardia, ala piccola, ala grande, centro) ha 48 minuti a partita:
+   il titolare è il migliore sano in quel ruolo, poi la riserva, poi il terzo.
+   Se si fa male il centro titolare entra il centro di riserva, non un play.
+   Se in un ruolo non c'è nessuno, si adatta chi gioca nel ruolo vicino. */
 const rotCmp = (a, b) => b.ovr - a.ovr || a.id - b.id;
-// posto in rotazione (0 = il migliore) che avrebbe p in quella squadra; healthy: conta solo i sani
-function rotIndex(p, tid, healthy = true) {
-  return rosterOf(tid).filter(x => x.id !== p.id && (!healthy || !x.injury) && rotCmp(x, p) < 0).length;
+const POS_ADJ = { PG: ['SG'], SG: ['PG', 'SF'], SF: ['SG', 'PF'], PF: ['SF', 'C'], C: ['PF'] };
+const POS_FILL = ['C', 'PG', 'PF', 'SG', 'SF']; // prima i ruoli più difficili da coprire
+const POS_NAME = { PG: 'play', SG: 'guardia', SF: 'ala piccola', PF: 'ala grande', C: 'centro' };
+const SLOT_RANK = { start: 0, bench: 1, third: 2, deep: 3 };
+// pid → { slot: start|bench|third|deep, pos (ruolo che copre), min }. extra = giocatore che arriverebbe (offerte)
+function depthChart(tid, healthy = true, extra = null) {
+  let r = rosterOf(tid).filter(x => !extra || x.id !== extra.id);
+  if (extra) r.push(extra);
+  if (healthy) r = r.filter(x => !x.injury);
+  r.sort(rotCmp);
+  const free = new Set(r), out = new Map(), st = {}, bk = {};
+  const take = pos => {
+    let c = r.find(x => free.has(x) && x.pos === pos);
+    if (!c) c = r.find(x => free.has(x) && POS_ADJ[pos].includes(x.pos));
+    if (c) free.delete(c);
+    return c;
+  };
+  for (const pos of POS_FILL) st[pos] = take(pos);
+  for (const pos of POS_FILL) if (!st[pos]) { const c = r.find(x => free.has(x)); if (c) { free.delete(c); st[pos] = c; } }
+  for (const pos of POS_FILL) bk[pos] = take(pos);
+  const thirds = {};
+  for (const x of r) if (free.has(x)) (thirds[x.pos] = thirds[x.pos] || []).push(x);
+  for (const pos of POS) {
+    const s = st[pos], b = bk[pos]; if (!s) continue;
+    const th = (thirds[pos] || []).slice(0, 2);
+    const sm = b ? clamp(Math.round(30 + (s.ovr - b.ovr) * 0.35 + (s.ovr >= 85 ? 2 : 0)), 26, s.ovr >= 85 ? 37 : 35) : 42;
+    out.set(s.id, { slot: 'start', pos, min: sm });
+    if (b) out.set(b.id, { slot: 'bench', pos, min: Math.max(6, 48 - sm - th.length * 2) });
+    th.forEach(x => out.set(x.id, { slot: 'third', pos, min: 2 }));
+  }
+  for (const x of r) if (!out.has(x.id)) out.set(x.id, { slot: 'deep', pos: x.pos, min: 0 });
+  return out;
 }
-const ROLE_NAMES = ['in quintetto', 'in quintetto', 'in quintetto', 'in quintetto', 'in quintetto', 'sesto uomo', 'settimo uomo', 'ottavo uomo', 'nona scelta dalla panchina', 'decima scelta dalla panchina'];
-const roleName = i => ROLE_NAMES[i] || 'fondo panchina';
-const roleMin = i => MIN[i] || 0;
-// testo del ruolo, con la nota sugli infortuni: "sesto uomo · ~24 min (in quintetto finché X è fermo)"
+function roleLabel(e, p) {
+  if (!e) return 'fuori rotazione';
+  const n = POS_NAME[e.pos], fem = e.pos === 'SG' || e.pos === 'SF' || e.pos === 'PF';
+  const base = e.slot === 'start' ? `${n} titolare` : e.slot === 'bench' ? `${n} di riserva` : e.slot === 'third' ? `terz${fem ? 'a' : 'o'} ${n}` : 'fondo panchina';
+  return base + (e.slot !== 'deep' && p && e.pos !== p.pos ? ` (adattato, è ${{ PG: 'un play', SG: 'una guardia', SF: 'un\'ala piccola', PF: 'un\'ala grande', C: 'un centro' }[p.pos]})` : '');
+}
+const roleWithMin = (e, p) => roleLabel(e, p) + (e && e.min ? ` · ~${e.min} min` : '');
+// "centro di riserva · ~16 min", con la nota sugli infortuni dei compagni nello stesso ruolo
 function roleTxt(p, tid) {
-  const now = rotIndex(p, tid, true), full = rotIndex(p, tid, false);
-  let s = `${roleName(now)} · ~${roleMin(now)} min`;
-  if (now < full) {
-    const hurt = rosterOf(tid).filter(x => x.id !== p.id && x.injury && rotCmp(x, p) < 0).sort(rotCmp).map(x => x.name.split(' ').slice(-1)[0]);
-    const who = `${hurt.slice(0, 2).join(' e ')} ${hurt.length > 1 ? 'sono fermi' : 'è fermo'}`;
-    s += roleName(full) !== roleName(now) ? ` finché ${who}, poi ${roleName(full)}` : ` finché ${who}, poi ~${roleMin(full)} min`;
+  const extra = p.team === tid ? null : p;
+  const full = depthChart(tid, false, extra).get(p.id);
+  if (p.injury) return `${roleWithMin(full, p)} quando rientra`;
+  const now = depthChart(tid, true, extra).get(p.id);
+  let s = roleWithMin(now, p);
+  if (roleLabel(now, p) !== roleLabel(full, p) || Math.abs(now.min - full.min) >= 3) {
+    const hurt = rosterOf(tid).filter(x => x.id !== p.id && x.injury && (x.pos === now.pos || x.pos === p.pos)).sort(rotCmp).map(x => x.name.split(' ').slice(-1)[0]);
+    if (hurt.length) s += ` finché ${hurt.slice(0, 2).join(' e ')} ${hurt.length > 1 ? 'sono fermi' : 'è fermo'}, poi ${roleWithMin(full, p)}`;
   }
   return s;
 }
-// avvisa quando un tuo cliente sale (o torna giù) per un infortunio in squadra
+// avvisa quando un tuo cliente sale (o torna giù) per un infortunio di un compagno di ruolo
 function rotationNews() {
   for (const p of clients()) {
-    if (p.team == null || p.injury) { p.roleIdx = null; continue; }
-    const now = rotIndex(p, p.team, true), full = rotIndex(p, p.team, false), was = p.roleIdx;
-    if (was != null && now !== was && roleName(now) !== roleName(was)) {
-      if (now < was && now < full) addNews(`🔥 Infortunio nei ${esc(teamOf(p).name)}: <b>${esc(p.name)}</b> ora è ${roleName(now)} (circa ${roleMin(now)} minuti a partita).`, 'good');
-      else if (now > was && full >= now) addNews(`🔁 Rientrano gli infortunati dei ${esc(teamOf(p).name)}: ${esc(p.name)} torna ${roleName(now)}.`);
+    if (p.team == null || p.injury) { p.roleKey = null; continue; }
+    const now = depthChart(p.team, true).get(p.id), full = depthChart(p.team, false).get(p.id);
+    const key = roleLabel(now, p), was = p.roleKey;
+    if (was && key !== was) {
+      if (SLOT_RANK[now.slot] < SLOT_RANK[full.slot]) addNews(`🔥 Infortunio nei ${esc(teamOf(p).name)}: <b>${esc(p.name)}</b> ora è ${key} (circa ${now.min} minuti a partita).`, 'good');
+      else if (key === roleLabel(full, p)) addNews(`🔁 Rientrano gli infortunati dei ${esc(teamOf(p).name)}: ${esc(p.name)} torna ${key}.`);
     }
-    p.roleIdx = now;
+    p.roleKey = key;
   }
 }
 const teamRank = tid => standings().findIndex(t => t.id === tid) + 1;
@@ -1200,8 +1239,8 @@ function teamFit(p, tid, salary) {
     return [k <= 8 ? 1 : k <= 16 ? 0.3 : k <= 22 ? -0.4 : -1, early ? `${k}ª rosa più forte della lega` : `squadra ${k}ª in classifica`];
   }
   if (pr === 'citta') return [t.market >= 0.75 ? 1 : t.market >= 0.5 ? 0.3 : t.market >= 0.3 ? -0.4 : -1, t.market >= 0.75 ? 'grande città' : t.market >= 0.5 ? 'città media' : 'città piccola'];
-  const i = rotIndex(p, tid, false);
-  return [i <= 4 ? 1 : i <= 6 ? 0.4 : i <= 8 ? -0.3 : -1, `sarebbe ${roleTxt(p, tid)}`];
+  const e = depthChart(tid, false, p.team === tid ? null : p).get(p.id) || { slot: 'deep', min: 0 };
+  return [e.slot === 'start' ? 1 : e.slot === 'bench' ? (e.min >= 16 ? 0.4 : -0.2) : e.slot === 'third' ? -0.7 : -1, `sarebbe ${roleTxt(p, tid)}`];
 }
 const fitIcon = f => `<i class="dot ${f >= 0.6 ? 'good' : f >= 0 ? 'warn' : 'bad'}"></i>`;
 // Il valore di mercato non si conosce con precisione: una forbice che l'ufficio legale restringe
