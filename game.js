@@ -2078,19 +2078,14 @@ const UI = {
     return `<div class="start">
       <div class="start-hero">${heroSVG(null)}</div>
       <h1>Super <span>Agente</span> NBA</h1>
-      <p>Costruisci l'agenzia di procuratori più potente del basket americano.</p>
+      <p>Un telefono, due clienti e trecentomila dollari per arrivare in cima alla NBA.</p>
       ${UI.installHint()}
       <form onsubmit="event.preventDefault(); UI.start(this)">
         <label>Il tuo nome<input id="f-agent" name="agent" maxlength="30" placeholder="Es. Marco Rossi" required></label>
         <label>Nome dell'agenzia<input id="f-agency" name="agency" maxlength="34" placeholder="Es. Hoop Dreams Agency" required></label>
         <button class="btn primary big">Fonda l'agenzia</button>
       </form>
-      <ul class="rules">
-        <li>🔭 <b>Scova talenti</b> tra i prospetti del college e i free agent, poi convincili a firmare con te.</li>
-        <li>🤝 <b>Negozia i contratti</b> con le squadre: chiedi troppo e il GM si alza dal tavolo.</li>
-        <li>🎬 <b>Ogni settimana un imprevisto</b>: videoclip, tatuaggi, sponsor, litigi col coach…</li>
-        <li>💰 Guadagni una <b>commissione</b> su stipendi (1-4%) e sponsor (15%). Se resti in rosso 4 settimane, perdi la licenza.</li>
-      </ul>
+      <p class="rules">Cerchi ragazzi al college e free agent, li convinci a firmare con te e tratti i loro contratti con le squadre. Ci guadagni una commissione sugli stipendi e sugli sponsor. Nel frattempo i tuoi clienti si tatuano la faccia, litigano col coach e girano videoclip. Se resti in rosso per quattro settimane ti ritirano la licenza.</p>
       ${has ? '<p class="small">C\'è una partita salvata: verrà sovrascritta.</p>' : ''}
       <p class="small muted">Squadre, giocatori, sponsor e personaggi famosi sono parodie con nomi storpiati.</p>
     </div>`;
@@ -2363,7 +2358,7 @@ const UI = {
         <div class="tk-odds"><span>Probabilità che accetti di incontrarti</span><b class="${c > .6 ? 'good' : c > .3 ? 'warn' : 'bad'}">${Math.round(c * 100)}%</b></div>
         <p class="small muted">Organizzare l'incontro costa ${fmt$(cost)}. Contano la tua reputazione, il legame con lui e se ha già un agente.</p>
         ${blocked ? `<p class="bad">${blocked}</p>` : ''}
-        <div class="actions"><button class="btn primary" onclick="UI.doStartTalk(${pid})" ${blocked ? 'disabled' : ''}>Chiedi un incontro — ${fmt$(cost)}</button>
+        <div class="actions"><button class="btn primary" onclick="UI.doStartTalk(${pid})" ${blocked ? 'disabled' : ''}>Chiedi un incontro (${fmt$(cost)})</button>
         <button class="btn" onclick="UI.closeModal()">Annulla</button></div>`);
     }
     const hearts = '<i class="pip"></i>'.repeat(Math.max(0, t.patience)) + '<i class="pip off"></i>'.repeat(Math.max(0, t.max - t.patience));
@@ -2620,7 +2615,7 @@ const UI = {
         return `<div class="card"><h3>${s.icon} ${s.name}</h3><div class="muted small">${s.desc}</div>
           <p>${k === 'informer' ? `<b>${INFORMER_LV[lvl]}</b>` : `Livello <b>${lvl}</b> / 5`} ${'★'.repeat(lvl)}${'☆'.repeat(5 - lvl)}</p>
           ${lvl < 5 && net - staffStep(k) < 0 ? `<p class="small bad">Con questo livello andresti in perdita di ${fmt$(staffStep(k) - net)} a settimana.</p>` : ''}
-          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} — ${fmt$(cost)}</button>` : '<span class="good">Al massimo!</span>'}</div>`;
+          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
       }).join('')}</div>
       <h2>Investimenti</h2>
       <p class="muted small">Quando l'agenzia è grande, i soldi servono a crescere ancora. Ogni 5% di una squadra rende il 4% l'anno in dividendi, migliora il rapporto con lei e le sue offerte ai tuoi clienti. Con il 51% diventi presidente.</p>
@@ -2673,7 +2668,7 @@ const Tutorial = {
     { t: 't-cash', h: 'La tua cassa', x: 'Qui vedi i soldi e quanto guadagni o perdi in media a settimana. Ci paghi lo staff, gli incontri con i giocatori e i bonus alla firma. <b>Se resti in rosso per 4 settimane perdi la licenza!</b>' },
     { t: 't-rep', h: 'La reputazione', x: 'Più è alta, più i campioni accettano di incontrarti. Sale con i contratti ricchi, i premi e le scelte azzeccate; scende con figuracce e clienti persi.' },
     { t: 't-cl', h: 'I posti in agenzia', x: 'Puoi seguire un numero limitato di clienti. Per averne di più, amplia gli <b>Uffici</b> nella scheda Staff.' },
-    { t: 't-ev', h: 'Gli imprevisti', x: 'Ogni tanto succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede e con che probabilità. Alcune scelte cambiano anche l\'aspetto del giocatore. Più raramente arriva un <b>⚡ colpo di scena</b> che può cambiare una carriera, in bene o in male.' },
+    { t: 't-ev', h: 'Gli imprevisti', x: 'Ogni tanto qualcuno dei tuoi ne combina una, o arriva una proposta strana. Sotto ogni scelta vedi cosa succede e con che probabilità. Alcune scelte cambiano anche l\'aspetto del giocatore. Più raramente arriva un <b>⚡ colpo di scena</b> che può cambiare una carriera, in bene o in male.' },
     { t: 't-pls', h: 'I tuoi giocatori', x: 'Per ognuno vedi la <b>prossima partita</b>, la posizione in classifica della squadra, le medie di punti, rimbalzi e assist e il <b>voto dell\'ultima gara</b>. Tocca un giocatore per aprire la sua scheda: lì trovi carattere, storia e il pulsante <b>Consiglia</b>.' },
     { t: 't-chal', h: 'Sfide della stagione', x: 'Ogni stagione arrivano 3 sfide nuove, sempre un po\' più difficili, con un premio in soldi e reputazione. Gli <b>obiettivi</b> qui sotto invece sono traguardi di carriera, una volta sola.' },
     { t: null, h: 'Il carattere', x: 'Ogni giocatore ha il suo carattere e la sua storia, e il carattere si vede in quello che combina: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Conta anche negli affari: un leale è difficile da portarti via, uno attaccato ai soldi chiede di più.' },
