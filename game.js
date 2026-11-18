@@ -2085,7 +2085,8 @@ const UI = {
         <label>Nome dell'agenzia<input id="f-agency" name="agency" maxlength="34" placeholder="Es. Hoop Dreams Agency" required></label>
         <button class="btn primary big">Fonda l'agenzia</button>
       </form>
-      <p class="rules">Cerchi ragazzi al college e free agent, li convinci a firmare con te e tratti i loro contratti con le squadre. Ci guadagni una commissione sugli stipendi e sugli sponsor. Nel frattempo i tuoi clienti si tatuano la faccia, litigano col coach e girano videoclip. Se resti in rosso per quattro settimane ti ritirano la licenza.</p>
+      <div class="rules"><p>Scopri un ragazzo al college prima di tutti, conquista la sua fiducia e portalo al Draft. Poi strappa alle squadre il contratto che merita e guardalo diventare una stella.</p>
+        <p>Firma i campioni che gli altri agenti non riescono nemmeno a incontrare, fai crescere la tua agenzia e prova a portare un tuo cliente oltre i record di Wilt Ciambellano e LeBonno James.</p></div>
       ${has ? '<p class="small">C\'è una partita salvata: verrà sovrascritta.</p>' : ''}
       <p class="small muted">Squadre, giocatori, sponsor e personaggi famosi sono parodie con nomi storpiati.</p>
     </div>`;
