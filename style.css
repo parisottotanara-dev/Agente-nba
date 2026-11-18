@@ -671,3 +671,4 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .filebtn { display: inline-block; margin: 8px 0; cursor: pointer; }
 #imp-code { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; font-size: 14px; }
 .top-row .btn.help .ic { width: 20px; height: 20px; }
+.chip .cash-note { display: block; font-size: 10.5px; color: var(--muted); margin-top: 1px; }

@@ -465,6 +465,16 @@ function repayLoan() {
   addNews(`🏦 Hai chiuso in anticipo il prestito pagando ${fmt$(cost)}.`, 'good');
   return { msg: `Prestito chiuso con ${fmt$(cost)}.`, type: 'good' };
 }
+// quanto entra in una settimana di questa fase: le commissioni sugli stipendi arrivano solo in stagione regolare
+function weeklyIncomeIn(phase) {
+  let inc = 0;
+  for (const p of clients()) {
+    if (phase === 'reg' && p.team != null) inc += p.salary * 1e6 * p.comm / 100 / REG_WEEKS;
+    for (const sp of p.sponsors) inc += sp.value * 1e6 * SPONSOR_CUT / TURNS_PER_YEAR;
+  }
+  return inc;
+}
+const weeklyNetIn = phase => weeklyIncomeIn(phase) - weeklyCost() - loanRate();
 function weeklyIncomeEstimate() {
   let inc = 0;
   for (const p of clients()) {
@@ -2446,6 +2456,7 @@ const UI = {
     const stars = Math.round(S.rep / 20);
     const ranking = this.agencyRanking();
     const myPos = ranking.findIndex(r => r.mine) + 1;
+    const netNow = weeklyNetIn(S.phase), netSeason = weeklyNetIn('reg');
     const net = weeklyIncomeEstimate() - weeklyCost() - loanRate();
     const hpT = hp && teamOf(hp);
     const feed = S.news.slice(0, 12).map(n => {
@@ -2459,7 +2470,7 @@ const UI = {
         ${hp ? `<button class="hero-tag" onclick="UI.player(${hp.id})">⭐ ${esc(hp.name)} · #${hp.num}${hpT ? ` · ${esc(hpT.name)}` : ''}${hp.team != null ? ` · ${fmtM(hp.salary)}` : ''}</button>` : ''}
       </div>
       <div class="chips">
-        <div class="chip" id="t-cash"><small>💰 Cassa</small><b class="${S.cash < 0 ? 'bad' : ''}">${fmt$(S.cash)}</b><span class="${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : ''}${fmt$(net)}/sett.</span></div>
+        <div class="chip" id="t-cash"><small>💰 Cassa</small><b class="${S.cash < 0 ? 'bad' : ''}">${fmt$(S.cash)}</b><span class="${netNow >= 0 ? 'good' : 'bad'}">${netNow >= 0 ? '+' : ''}${fmt$(netNow)}/sett.</span>${S.phase !== 'reg' ? `<small class="cash-note">in stagione ${netSeason >= 0 ? '+' : ''}${fmt$(netSeason)}</small>` : ''}</div>
         <div class="chip" id="t-rep"><small>Reputazione</small><b>${S.rep.toFixed(0)}</b><span class="stars">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</span></div>
         <div class="chip" id="t-cl"><small>👥 Clienti</small><b>${cl.length} / ${capacity()}</b><span class="muted">${myPos}ª agenzia</span></div>
       </div>
@@ -3011,7 +3022,7 @@ const UI = {
   v_staff() {
     const net = weeklyIncomeEstimate() - weeklyCost() - loanRate();
     return `<h2>Staff e strutture</h2>
-      <p class="muted small">Costi fissi attuali: <b>${fmt$(weeklyCost())}</b> a settimana · entrate medie <b>${fmt$(weeklyIncomeEstimate())}</b> · saldo <b class="${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : ''}${fmt$(net)}</b>. Ogni livello aumenta le spese settimanali.</p>
+      <p class="muted small">Costi fissi attuali: <b>${fmt$(weeklyCost())}</b> a settimana · entrate medie sull'anno <b>${fmt$(weeklyIncomeEstimate())}</b> a settimana (in stagione regolare ${fmt$(weeklyIncomeIn('reg'))}, fuori stagione ${fmt$(weeklyIncomeIn('fa'))}) · saldo medio <b class="${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : ''}${fmt$(net)}</b>. Ogni livello aumenta le spese settimanali.</p>
       ${net < 0 ? '<div class="note warn">⚠️ Stai spendendo più di quanto incassi: prima di potenziare, trova nuovi clienti o firma contratti più ricchi.</div>' : ''}
       <div class="grid">${Object.entries(STAFF).map(([k, s]) => {
         const lvl = S.staff[k] || 0, cost = upgradeCost(lvl, k);
@@ -3101,7 +3112,7 @@ const Tutorial = {
   steps: [
     { t: null, h: 'Benvenuto, agente!', x: 'Sono <b>Coach Gigi</b> e ti spiego come funziona. Sei un procuratore: trovi giocatori, li porti nella tua agenzia e guadagni una percentuale sui loro <b>stipendi</b> (1-4%) e sui loro <b>sponsor</b> (15%).' },
     { t: 't-adv', h: 'Avanza settimana', x: 'Ogni tocco fa passare una settimana: si giocano 4 partite, incassi le commissioni e paghi lo staff. Poi vedi i <b>risultati</b> dei tuoi giocatori con un voto da A+ a F. Se il pulsante diventa <b>giallo</b>, prima devi decidere un imprevisto. La stagione è: Free Agency → stagione regolare → playoff → Draft.' },
-    { t: 't-cash', h: 'La tua cassa', x: 'Qui vedi i soldi e quanto guadagni o perdi in media a settimana. Ci paghi lo staff, gli incontri con i giocatori e i bonus alla firma. <b>Se resti in rosso per 4 settimane perdi la licenza!</b>' },
+    { t: 't-cash', h: 'La tua cassa', x: 'Qui vedi i soldi e quanto guadagni o perdi questa settimana. Le commissioni sugli stipendi arrivano solo durante la stagione regolare: d\'estate le spese corrono e gli incassi no, quindi tieni da parte qualcosa. Ci paghi lo staff, gli incontri con i giocatori e i bonus alla firma. <b>Se resti in rosso per 4 settimane perdi la licenza!</b>' },
     { t: 't-rep', h: 'La reputazione', x: 'Più è alta, più i campioni accettano di incontrarti. Sale con i contratti ricchi, i premi e le scelte azzeccate; scende con figuracce e clienti persi.' },
     { t: 't-cl', h: 'I posti in agenzia', x: 'Puoi seguire un numero limitato di clienti. Per averne di più, amplia gli <b>Uffici</b> nella scheda Staff.' },
     { t: 't-ev', h: 'Gli imprevisti', x: 'Ogni tanto qualcuno dei tuoi ne combina una, o arriva una proposta strana. Sotto ogni scelta vedi cosa succede e con che probabilità. Alcune scelte cambiano anche l\'aspetto del giocatore. Più raramente arriva un <b>⚡ colpo di scena</b> che può cambiare una carriera, in bene o in male.' },
