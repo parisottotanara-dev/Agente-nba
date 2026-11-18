@@ -609,3 +609,5 @@ div.rules p { margin: 0 0 10px; }
 /* titolo sopra, messaggio sotto: niente testo tagliato */
 .toast.arc { flex-direction: column; align-items: center; gap: 2px; text-align: center; padding: 7px 16px 9px; max-width: min(400px, 92vw); }
 .toast.arc span { white-space: normal; -webkit-line-clamp: 3; }
+
+.pl-sub .good, .pl-sub .bad, .meta .good, .meta .bad { font-weight: 700; }

@@ -907,6 +907,8 @@ function condOk(e, p) {
   if (!p) return !!e.any;
   if (e.any) return false;
   if (p.school ? !(e.college || COLLEGE_OK.has(e.id)) : e.college) return false; // al college solo imprevisti da college
+  if (c.phases && !c.phases.includes(S.phase)) return false;
+  if (c.ncaa && !isNcaa(p)) return false;
   if (c.minAge && p.age < c.minAge) return false;
   if (c.maxAge && p.age > c.maxAge) return false;
   if (c.invented && (p.vip || p.star)) return false; // i fatti più pesanti solo per giocatori inventati
@@ -1252,12 +1254,59 @@ function bondedJoin() {
 /* ================================================================== */
 // Posizione al Draft di ogni squadra se la stagione finisse oggi (le peggiori scelgono prima)
 const draftSlot = tid => [...standings()].reverse().findIndex(t => t.id === tid) + 1;
-const draftScore = p => p.ovr * 0.55 + p.pot * 0.45 + p.teamNoise * 3 + (p.draftBoost || 0);
+const draftScore = p => p.ovr * 0.55 + p.pot * 0.45 + p.teamNoise * 3 + (p.draftBoost || 0) + (p.draftForm || 0);
 // Dove lo sceglierebbero oggi le squadre
+// classifica dei prospetti per il prossimo Draft
+function draftBoard() { return Object.values(S.players).filter(x => x.school && !x.retired && x.skipDraft !== S.season).sort((a, b) => draftScore(b) - draftScore(a)); }
+// proiezione con il movimento della settimana: "#12 ↑6"
+function projTxt(p) {
+  const now = draftProjection(p); if (!now) return '';
+  const d = p.projWas ? p.projWas - now : 0;
+  return `#${now}${d ? ` <span class="${d > 0 ? 'good' : 'bad'}">${d > 0 ? '↑' : '↓'}${Math.abs(d)}</span>` : ''}`;
+}
+/* Ogni settimana al college: partite buone e cattive, voci, osservatori. La proiezione si muove. */
+const PROSPECT_NEWS = [
+  { ph: ['reg'], b: 4, t: '{N} ({S}) segna 38 punti contro una delle migliori difese del campionato. Gli osservatori NBA prendono appunti.' },
+  { ph: ['reg'], b: 3, t: 'Tripla doppia per {N} ({S}) in diretta nazionale. Il suo nome sale nelle liste di molte squadre.' },
+  { ph: ['reg'], b: -3, t: 'Serata da dimenticare per {N} ({S}): 2 su 15 al tiro con venti osservatori NBA in tribuna.' },
+  { ph: ['reg'], b: -5, inj: true, t: '{N} ({S}) si rompe il polso: stagione finita. Le squadre NBA aspettano le visite mediche.' },
+  { ph: ['reg'], b: -3, t: '{N} ({S}) sospeso per tre partite dopo una lite con il suo allenatore.' },
+  { ph: ['reg'], b: 2, t: '{N} ({S}) è cresciuto di 3 centimetri in un anno. Alcuni scout lo vedono in un ruolo nuovo.', h: 3 },
+  { ph: ['reg', 'po'], b: 4, ncaa: true, t: '{N} ({S}) trascina il suo college nel torneo di marzo con 27 punti di media.' },
+  { ph: ['reg', 'po'], b: 4, ncaa: false, t: '{N} ({S}) è il migliore dei playoff del suo campionato: 24 punti di media contro uomini di 30 anni.' },
+  { ph: ['po'], b: 3, t: 'Alla Combine {N} salta più in alto di tutti. Due squadre chiedono un provino privato.' },
+  { ph: ['po'], b: -4, t: 'Alla Combine i medici trovano un problema al ginocchio di {N}. Alcune squadre lo tolgono dalla lista.' },
+  { ph: ['po', 'draft'], b: -3, t: 'Colloquio disastroso di {N} con un GM: è arrivato in ritardo e ha parlato solo di macchine.' },
+  { ph: ['po', 'draft'], b: 2, t: 'Provino privato perfetto per {N}: si dice che una squadra della lotteria lo voglia a tutti i costi.' },
+  { ph: ['fa', 'reg'], b: -2, t: 'Spuntano vecchi post di {N} di quando aveva 15 anni. La sua squadra lo difende, ma qualche squadra NBA si raffredda.' },
+];
+// gioca in un college americano (non all'estero, non in G-League)
+const isNcaa = p => !!p.school && !/\(|G-League/.test(p.school);
+function prospectWeek() {
+  if (!['fa', 'reg', 'po', 'draft'].includes(S.phase)) return;
+  const board = draftBoard();
+  board.forEach((p, i) => { p.projWas = i + 1; });
+  for (const p of board) {
+    // forma della stagione: alti e bassi che durano qualche settimana
+    p.draftForm = r1((p.draftForm || 0) * 0.88 + gauss() * (S.phase === 'reg' ? 0.9 : 0.4));
+  }
+  // una notizia sui prospetti più seguiti (mai i tuoi: a loro capitano gli imprevisti)
+  if (chance(0.55)) {
+    const pool = board.slice(0, 40).filter(p => !isClient(p));
+    const opts = PROSPECT_NEWS.filter(n => n.ph.includes(S.phase));
+    if (pool.length && opts.length) {
+      const p = pick(pool), n = pick(opts.filter(n => n.ncaa == null || n.ncaa === isNcaa(p)));
+      p.draftBoost = (p.draftBoost || 0) + n.b;
+      if (n.h) p.h = (p.h || 200) + n.h;
+      if (n.inj) p.injury = Math.max(p.injury || 0, 6);
+      p.hype = clamp((p.hype || 0) + (n.b > 0 ? 4 : -2), 0, 100);
+      addNews(`${n.b > 0 ? '📈' : '📉'} ${esc(n.t.replace(/\{N\}/g, p.name).replace(/\{S\}/g, p.school))}`);
+    }
+  }
+}
 function draftProjection(p) {
   if (!p.school) return null;
-  const pros = Object.values(S.players).filter(x => x.school && !x.retired && x.skipDraft !== S.season).sort((a, b) => draftScore(b) - draftScore(a));
-  return pros.indexOf(p) + 1;
+  return draftBoard().indexOf(p) + 1;
 }
 function recChance(p, tid) {
   const rel = teamRel(tid);
@@ -1656,6 +1705,7 @@ function advance() {
 
   chalUpdate('income', Math.round(S.seasonIncome / 1000), 'set');
   if (S.phase === 'fa' || S.phase === 'reg') informerWeek();
+  prospectWeek();
   rivalDeadlines();
   if (!S.over) genWeeklyEvents();
 
@@ -1780,7 +1830,7 @@ function runDraft() {
       if (pi >= 0 && pi <= 14 && isClient(p)) changeTeamRel(tid, 3);
       const sal = round === 1 ? r1(Math.max(2.2, 11 - (n - 1) * 0.3)) : MIN_SAL;
       p.school = null; p.team = tid; p.salary = sal; p.years = round === 1 ? 4 : 2; p.rookieSeason = S.season + 1;
-      p.draftPick = n; p.promise = null; p.draftBoost = 0;
+      p.draftPick = n; p.promise = null; p.draftBoost = 0; p.draftForm = 0; p.projWas = null;
       if (isClient(p)) { mine.push(p); changeRep(round === 1 ? Math.max(0.5, (31 - n) / 5) : 0.3); p.morale = clamp(p.morale + (round === 1 ? 15 : 0), 0, 100); }
     }
   }
@@ -2274,6 +2324,7 @@ const UI = {
         <div>${p.injury ? `<span class="tag inj">infortunato ${p.injury} sett.</span>` : ''}${!t && !p.school ? '<span class="tag fa">free agent</span>' : ''}${p.school ? '<span class="tag">prospetto Draft</span>' : ''}</div></div></div>
       <dl class="rows">
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) : p.school ? esc(p.school) : '—'}</dd>
+        ${p.school ? `<dt>Proiezione Draft</dt><dd>${projTxt(p)}</dd>` : ''}
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years} ann${p.years > 1 ? 'i' : 'o'}</dd>` : ''}
         <dt>Commissione</dt><dd>${p.comm}%${t ? ` · ${fmt$(p.salary * 1e6 * p.comm / 100)}/anno` : ''}</dd>
         <dt>Fisico</dt><dd>${bodyTxt(p)}</dd>
@@ -2370,7 +2421,7 @@ const UI = {
     let meta;
     if (p.injury) meta = `🚑 Fermo ancora ${p.injury} sett.${p.injDebt ? ` · forma −${p.injDebt}` : ''}`;
     else if (p.injDebt) meta = `🩹 Sta tornando in forma (−${p.injDebt} di valutazione per qualche settimana)`;
-    else if (p.school) { const pr = draftProjection(p); meta = `🎓 ${esc(p.school)} · proiezione Draft <b>#${pr}</b>${p.promise != null ? ` · 📣 promesso ai ${esc(S.teams[p.promise].name)}` : ''}`; }
+    else if (p.school) { const pr = draftProjection(p); meta = `🎓 ${esc(p.school)} · proiezione Draft <b>${projTxt(p)}</b>${p.promise != null ? ` · 📣 promesso ai ${esc(S.teams[p.promise].name)}` : ''}`; }
     else if (!t) { const n = S.offers.filter(o => o.pid === p.id).length; meta = `🆓 Senza squadra${n ? ` · <b>${n} offert${n > 1 ? 'e' : 'a'}</b>` : ''}`; }
     else meta = `${ng ? `📅 Prossima: <b>${esc(ng)}</b> · ` : ''}🏆 ${teamRank(t.id)}ª in classifica (${t.w}-${t.l})<br>Ruolo: <b>${roleTxt(p, t.id)}</b>`;
     const stats = t && p.gp ? `<div class="pl-stats"><span><b>${r1(avg(p, 'min'))}</b>MIN</span><span><b>${r1(avg(p, 'pts'))}</b>PTS</span><span><b>${r1(avg(p, 'reb'))}</b>REB</span><span><b>${r1(avg(p, 'ast'))}</b>AST</span></div>` : '';
@@ -2566,6 +2617,7 @@ const UI = {
       ${(p.traits || []).map(t => `<p class="small muted trait-desc"><b>${TRAITS[t].label}</b>: ${TRAITS[t].desc}</p>`).join('')}
       <dl class="rows">
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) + ' · #' + p.num : p.school ? esc(p.school) : 'Free agent'}</dd>
+        ${p.school ? `<dt>Proiezione Draft</dt><dd>${projTxt(p)}</dd>` : ''}
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years}</dd>` : ''}
         <dt>Fisico</dt><dd>${bodyTxt(p)}</dd>
         <dt>Valore di mercato</dt><dd>${ex ? '' : '~'}${fmtM(shownValue(p))}</dd>
