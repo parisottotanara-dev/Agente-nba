@@ -1685,7 +1685,7 @@ function advance() {
   S.turn++;
   UI.advancing = true; UI.goalQueue = [];
   expireOffers();
-  let played = false;
+  let played = false, draftNight = false;
   spend(weeklyCost());
   payLoanWeek();
   S.rep = r1(S.rep * (0.997 + (S.staff.hq || 0) * 0.0005)); // la fama va mantenuta (una bella sede aiuta)
@@ -1726,7 +1726,7 @@ function advance() {
     S.phase = 'draft'; S.week = 1;
   } else if (S.phase === 'draft') {
     bondedJoin();
-    runDraft();
+    runDraft(); draftNight = true;
     offseason();
     S.phase = 'fa'; S.week = 1;
     makeOffersForClientFAs();
@@ -1763,7 +1763,8 @@ function advance() {
     } else if (UI.pendingToast) toast(...UI.pendingToast);
     UI.pendingToast = null;
   };
-  if (played && S.showGames !== false) UI.showWeek(after); else after();
+  if (draftNight && S.lastDraft) UI.showDraft(after);
+  else if (played && S.showGames !== false) UI.showWeek(after); else after();
 }
 
 function allStar() {
@@ -1849,15 +1850,25 @@ function runDraft() {
   const avail = [...pros];
   let n = 0;
   const mine = [];
+  const picks = []; // per la schermata della serata del Draft
   for (let round = 1; round <= 2; round++) {
     for (const tid of draftOrder) {
       if (!avail.length) break;
       // una squadra mantiene la promessa se il ragazzo non è troppo indietro nella sua lista
       const pi = avail.findIndex(x => x.promise === tid);
-      const p = avail.splice(pi >= 0 && pi <= 14 ? pi : 0, 1)[0];
+      // ogni squadra ha la sua lista: guarda i migliori rimasti, il ruolo che le manca e il proprio gusto
+      let k = 0;
+      if (!(pi >= 0 && pi <= 14)) {
+        const need = pos => rosterOf(tid).filter(x => x.pos === pos).length < 2 ? 1.2 : 0;
+        const look = avail.slice(0, round === 1 ? 5 : 8);
+        let best = -1e9;
+        look.forEach((x, i) => { const v = draftScore(x) + need(x.pos) + gauss() * 1.6; if (v > best) { best = v; k = i; } });
+      } else k = pi;
+      const p = avail.splice(k, 1)[0];
       n++;
       if (pi >= 0 && pi <= 14 && isClient(p)) changeTeamRel(tid, 3);
       const sal = round === 1 ? r1(Math.max(2.2, 11 - (n - 1) * 0.3)) : MIN_SAL;
+      picks.push({ n, round, tid, pid: p.id, name: p.name, pos: p.pos, school: p.school, nat: p.nat, mine: isClient(p), proj: p.projWas || null, sal, promised: pi >= 0 && pi <= 14 && p.promise === tid });
       p.school = null; p.team = tid; p.salary = sal; p.years = round === 1 ? 4 : 2; p.rookieSeason = S.season + 1;
       p.draftPick = n; p.promise = null; p.draftBoost = 0; p.draftForm = 0; p.projWas = null;
       if (isClient(p)) { mine.push(p); changeRep(round === 1 ? Math.max(0.5, (31 - n) / 5) : 0.3); p.morale = clamp(p.morale + (round === 1 ? 15 : 0), 0, 100); }
@@ -1869,11 +1880,14 @@ function runDraft() {
   if (mine.some(p => p.draftPick <= 5)) checkGoal('top5', true);
   if (mine.length) chalUpdate('draft', Math.min(...mine.map(p => p.draftPick)), 'set');
   // non scelti → free agent
+  const undrafted = [];
   for (const p of Object.values(S.players)) if (p.school && !p.retired) {
+    if (isClient(p)) undrafted.push({ pid: p.id, name: p.name, stay: p.skipDraft === S.season });
     if (p.skipDraft === S.season) { p.promise = null; continue; } // resta un altro anno al college
     p.school = null;
     if (isClient(p)) addNews(`😕 ${esc(p.name)} non è stato scelto: ora è free agent.`, 'warn');
   }
+  S.lastDraft = { year: S.season + 1, picks, undrafted };
 }
 
 /* ================================================================== */
@@ -2465,6 +2479,35 @@ const UI = {
   },
 
   /* ---------- Risultati della settimana ---------- */
+  showDraft(after) {
+    const D = S.lastDraft;
+    let box = document.getElementById('weekres');
+    if (!box) { box = document.createElement('div'); box.id = 'weekres'; document.body.appendChild(box); }
+    const mine = D.picks.filter(x => x.mine);
+    const row = (x, i) => `<div class="dn-row ${x.mine ? 'mine' : ''}" style="animation-delay:${Math.min(i, 30) * 70}ms">
+        <span class="dn-n">#${x.n}</span><div class="dn-info"><b>${esc(x.name)}${x.mine ? ' <span class="tag fa">tuo</span>' : ''}</b>
+        <span>${esc(S.teams[x.tid].name)} · ${x.pos} · ${esc(x.school || '')}</span></div>
+        ${x.proj ? `<span class="dn-proj ${x.proj - x.n >= 3 ? 'good' : x.n - x.proj >= 3 ? 'bad' : ''}">prev. #${x.proj}</span>` : ''}</div>`;
+    const summary = [
+      ...mine.map(x => `<div class="dn-sum good">${ic('check')}<div><b>${esc(x.name)}</b> scelto con la <b>#${x.n}</b> dai ${esc(teamName(S.teams[x.tid]))}${x.promised ? ', come promesso' : ''}.
+        <small>${x.round === 1 ? `Primo giro: contratto da ${fmtM(x.sal)} per 4 anni.` : 'Secondo giro: contratto al minimo per 2 anni.'}${x.proj ? ` Le previsioni lo davano alla #${x.proj}.` : ''}</small></div></div>`),
+      ...D.undrafted.map(u => u.stay
+        ? `<div class="dn-sum">${ic('cap')}<div><b>${esc(u.name)}</b> resta un altro anno a farsi le ossa.</div></div>`
+        : `<div class="dn-sum bad">${ic('x')}<div><b>${esc(u.name)}</b> non è stato scelto. <small>Ora è free agent: puoi trovargli una squadra tu.</small></div></div>`),
+    ].join('');
+    const first = D.picks.filter(x => x.round === 1), second = D.picks.filter(x => x.round === 2 && x.mine);
+    box.innerHTML = deEmo(`<div class="wr-panel dn-panel" role="dialog" aria-label="Serata del Draft">
+      <div class="wr-title">Draft ${D.year}</div>
+      ${summary || '<div class="dn-sum">Nessun tuo cliente al Draft quest\'anno. Ecco chi è andato dove.</div>'}
+      <div class="dn-head">Primo giro</div>
+      <div class="dn-list">${first.map(row).join('')}</div>
+      ${second.length ? `<div class="dn-head">Secondo giro</div><div class="dn-list">${second.map((x, i) => row(x, first.length + i)).join('')}</div>` : ''}
+      <div class="wr-foot"><button class="btn primary wr-go" id="dn-go">Continua ▶</button></div></div>`);
+    box.hidden = false;
+    const m = box.querySelector('.dn-row.mine');
+    if (m) setTimeout(() => m.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }), Math.min(2200, (+m.style.animationDelay.replace('ms', '') || 0) + 300));
+    document.getElementById('dn-go').onclick = () => { box.hidden = true; after && after(); };
+  },
   showWeek(after) {
     const rows = clients().filter(p => p.week && p.week.length).sort((a, b) => b.salary - a.salary);
     if (!rows.length) { after && after(); return; }

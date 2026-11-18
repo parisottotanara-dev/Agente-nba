@@ -611,3 +611,24 @@ div.rules p { margin: 0 0 10px; }
 .toast.arc span { white-space: normal; -webkit-line-clamp: 3; }
 
 .pl-sub .good, .pl-sub .bad, .meta .good, .meta .bad { font-weight: 700; }
+
+/* serata del Draft */
+.dn-sum { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border-radius: 8px; background: rgba(0,0,0,.35); border: 1px solid #2c2347; font-size: 14px; line-height: 1.4; }
+.dn-sum .ic { width: 20px; height: 20px; margin-top: 1px; }
+.dn-sum.good { border-color: #39ff88; } .dn-sum.good .ic { color: #39ff88; }
+.dn-sum.bad { border-color: #ff4d6d; } .dn-sum.bad .ic { color: #ff4d6d; }
+.dn-sum small { display: block; color: #b9b2d6; font-size: 12.5px; margin-top: 2px; }
+.dn-head { font-family: var(--arcade); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: #b9b2d6; margin-top: 4px; }
+.dn-list { display: grid; gap: 5px; }
+.dn-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 6px; background: rgba(0,0,0,.3);
+  opacity: 0; animation: dnIn .35s ease-out forwards; }
+.dn-row.mine { background: linear-gradient(90deg, #ff7a1a40, rgba(0,0,0,.3)); outline: 2px solid var(--accent); }
+.dn-n { font-family: var(--arcade); font-size: 15px; width: 38px; color: var(--gold); flex: none; }
+.dn-info { flex: 1; min-width: 0; display: grid; }
+.dn-info b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dn-info span { font-size: 12px; color: #b9b2d6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dn-proj { font-size: 11.5px; color: #b9b2d6; flex: none; }
+.dn-proj.good { color: #39ff88; } .dn-proj.bad { color: #ff4d6d; }
+@keyframes dnIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dn-row { animation: none; opacity: 1; } }
+.dn-sum.good, .dn-sum.bad { color: #fff; }
