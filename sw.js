@@ -3,10 +3,10 @@
    senza internet si gioca con la copia salvata sul telefono. */
 'use strict';
 
-const CACHE = 'agente-nba-v19';
+const CACHE = 'agente-nba-v20';
 const APP = [
   './', './index.html', './style.css', './manifest.webmanifest',
-  './names.js', './events.js', './events_extra.js', './traits.js', './tuning.js', './records_data.js', './art.js', './game.js',
+  './names.js', './nations.js', './events.js', './events_extra.js', './traits.js', './tuning.js', './records_data.js', './art.js', './game.js',
   './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png',
 ];
 

@@ -68,10 +68,37 @@ const capacity = () => 4 + S.staff.office * 3;
 
 // quanto piace alle squadre al di là dei numeri: fisso per ogni giocatore
 const newAppeal = () => Math.round((Math.random() + Math.random() - 1) * 12) / 100;
+/* ---------- Nazionalità ---------- */
+function pickNat() {
+  const list = Object.entries(NATIONS).filter(([, n]) => n.w > 0), tot = list.reduce((s, [, n]) => s + n.w, 0);
+  let x = Math.random() * tot;
+  for (const [k, n] of list) { x -= n.w; if (x <= 0) return k; }
+  return 'USA';
+}
+const natName = p => (NATIONS[p.nat] || NATIONS.USA).name;
+const nameFor = nat => { const n = NATIONS[nat] && NATIONS[nat].first.length ? NATIONS[nat] : NATIONS.USA; return `${pick(n.first)} ${pick(n.last)}`; };
+function setNat(p, nat, rename = true) { p.nat = nat; if (rename && !p.star && !p.vip) p.name = nameFor(nat); }
+const US_SCHOOLS = COLLEGES.filter(c => !CLUB_NAT[c]);
+// dove gioca prima del Draft, coerente con il paese: gli europei spesso restano nei club di casa
+function schoolFor(p) {
+  const club = Object.keys(CLUB_NAT).find(c => CLUB_NAT[c] === p.nat);
+  if (club && chance(0.55)) return club;
+  return pick(US_SCHOOLS);
+}
+// salvataggi vecchi: la nazionalità si ricava da squadra giovanile, storia o cognome
+function inferNat(p) {
+  if (STAR_NAT[p.name]) return STAR_NAT[p.name];
+  if (p.school && CLUB_NAT[p.school]) return CLUB_NAT[p.school];
+  if (p.star || p.vip) return 'USA';
+  if (p.story) for (const [k, n] of Object.entries(NATIONS)) if (k !== 'USA' && n.places.some(pl => p.story.includes(pl))) return k;
+  const last = p.name.split(' ').slice(-1)[0];
+  for (const [k, n] of Object.entries(NATIONS)) if (k !== 'USA' && n.last.includes(last)) return k;
+  return 'USA';
+}
 function newPlayer(kind) {
   const age = kind === 'prospect' ? randi(18, 22) : randi(21, 34);
   const p = {
-    id: S.nextId++, name: `${pick(FIRST)} ${pick(LAST)}`, pos: pick(POS), age,
+    id: S.nextId++, name: '', nat: 'USA', pos: pick(POS), age,
     ovr: 60, pot: 70, team: null, salary: 0, years: 0, comm: 3, morale: 70, hype: 10, appeal: newAppeal(),
     agency: null, noise: gauss(), noise2: gauss(), teamNoise: gauss(), scouted: false,
     injury: 0, sponsors: [], refusals: 0, lockedUntil: 0, lastPitch: -1, lastContact: -1,
@@ -79,6 +106,7 @@ function newPlayer(kind) {
     career: { titles: 0, allstar: 0, mvp: 0, roy: 0, seasons: 0 },
     num: pick(NUMBERS), look: genLook(), traits: genTraits(),
   };
+  setNat(p, pickNat());
   genBody(p);
   return p;
 }
@@ -133,7 +161,7 @@ function newGame(agencyName, agentName) {
     const stars = STARS.filter(x => x[1] === t.abbr);
     for (const [name, , pos, age, ovr, num] of stars) {
       const p = newPlayer('pro');
-      Object.assign(p, { name, pos, age, ovr, num, team: t.id, star: true }); genBody(p);
+      Object.assign(p, { name, pos, age, ovr, num, team: t.id, star: true, nat: STAR_NAT[name] || 'USA' }); genBody(p);
       growPot(p);
       p.salary = clamp(r1(marketValue(p) * rand(0.9, 1.1)), MIN_SAL, MAX_SAL);
       p.years = randi(1, 4);
@@ -168,8 +196,8 @@ function newGame(agencyName, agentName) {
   const kidName = vips.pop();
   vips.forEach((name, i) => {
     const p = newPlayer(i % 2 ? 'prospect' : 'pro');
-    p.name = name; p.vip = true; p.hype = 35;
-    if (i % 2) { p.ovr = randi(52, 66); p.pot = clamp(p.ovr + randi(8, 25), p.ovr + 3, 95); p.school = pick(COLLEGES); }
+    p.name = name; p.vip = true; p.hype = 35; p.nat = STAR_NAT[name] || 'USA';
+    if (i % 2) { p.ovr = randi(52, 66); p.pot = clamp(p.ovr + randi(8, 25), p.ovr + 3, 95); p.school = schoolFor(p); }
     else { p.ovr = randi(58, 74); growPot(p); p.career.seasons = Math.max(0, p.age - 21); }
     p.agency = chance(0.4) ? pick(RIVALS) : null;
     S.players[p.id] = p;
@@ -181,7 +209,8 @@ function newGame(agencyName, agentName) {
   growPot(vet); vet.salary = r1(marketValue(vet)); vet.career.seasons = 4;
   S.players[vet.id] = vet; S.clients.push(vet.id);
   const kid = newPlayer('prospect');
-  Object.assign(kid, { name: kidName, vip: true, hype: 35, age: 19, ovr: 56, pot: 78, comm: 3, morale: 80, school: pick(COLLEGES) });
+  Object.assign(kid, { name: kidName, vip: true, nat: STAR_NAT[kidName] || 'USA', hype: 35, age: 19, ovr: 56, pot: 78, comm: 3, morale: 80 });
+  kid.school = schoolFor(kid);
   S.players[kid.id] = kid; S.clients.push(kid.id);
 
   addNews(`🏢 Nasce <b>${esc(S.agency)}</b>! Primi clienti: ${esc(vet.name)} e il giovane ${esc(kid.name)}.`, 'gold');
@@ -198,7 +227,7 @@ function genDraftClass() {
     const tier = Math.random();
     p.ovr = clamp(Math.round((tier < 0.08 ? 66 : tier < 0.3 ? 60 : 54) + gauss() * 4), 42, 74);
     p.pot = clamp(Math.round(p.ovr + rand(6, 28) - (p.age - 19) * 2), p.ovr + 3, 99);
-    p.school = pick(COLLEGES);
+    p.school = schoolFor(p);
     p.agency = chance(0.3) ? pick(RIVALS) : null;
     S.players[p.id] = p;
   }
@@ -1092,7 +1121,7 @@ function applyFx(f, inst, p) {
 }
 function findGem() {
   const g = newPlayer('prospect');
-  Object.assign(g, { age: randi(17, 19), ovr: randi(56, 63), school: 'Liceo di Akron (Ohio)', scouted: true, agency: null });
+  Object.assign(g, { age: randi(17, 19), ovr: randi(56, 63), school: 'Liceo di Akron (Ohio)', scouted: true, agency: null }); setNat(g, 'USA');
   g.pot = randi(86, 96);
   S.players[g.id] = g;
   addNews(`🔭 Il tuo scout ha trovato <b>${esc(g.name)}</b>, talento del liceo con potenziale ~${g.pot}. Lo trovi nel Mercato, tra i prospetti.`, 'good');
@@ -2323,6 +2352,7 @@ const UI = {
         <div class="traits">${traitChips(p)}</div>
         <div>${p.injury ? `<span class="tag inj">infortunato ${p.injury} sett.</span>` : ''}${!t && !p.school ? '<span class="tag fa">free agent</span>' : ''}${p.school ? '<span class="tag">prospetto Draft</span>' : ''}</div></div></div>
       <dl class="rows">
+        <dt>Nazionalità</dt><dd>${natName(p)}</dd>
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) : p.school ? esc(p.school) : '—'}</dd>
         ${p.school ? `<dt>Proiezione Draft</dt><dd>${projTxt(p)}</dd>` : ''}
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years} ann${p.years > 1 ? 'i' : 'o'}</dd>` : ''}
@@ -2390,7 +2420,7 @@ const UI = {
       <button class="mk-main" onclick="UI.player(${p.id})">
         ${avatarSVG(p, 48)}
         <span class="mk-info"><b>${esc(p.name)}${p.gem ? ' ' + ic('gem', 'in gem') : p.academy ? ' ' + ic('cap', 'in') : ''}${p.star || p.vip ? ' ' + ic('star', 'in star') : ''}</b>
-          <span>${p.pos} · ${p.age} anni · ${p.h || (genBody(p), p.h)} cm · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
+          <span>${p.pos} · ${p.age} anni · ${p.h || (genBody(p), p.h)} cm · ${natName(p)} · ${p.school ? esc(p.school) : t ? esc(teamName(t)) : 'senza squadra'}</span>
           <span class="${p.agency ? '' : 'good'}">${p.agency ? ic('lock', 'in') + ' ' + esc(p.agency) : '<i class="dot good"></i>nessun agente'}</span>
           <span class="ti">${(p.traits || []).map(t => TRAITS[t].label).join(' · ')}</span></span>
         <span class="mk-rat"><span><small>OVR</small><b>${ex ? '' : '~'}${shownOvr(p)}</b></span><span><small>POT</small><b class="pot">${ex ? '' : '~'}${shownPot(p)}</b></span></span>
@@ -2616,6 +2646,7 @@ const UI = {
       <p class="story">${esc(storyOf(p))}</p>
       ${(p.traits || []).map(t => `<p class="small muted trait-desc"><b>${TRAITS[t].label}</b>: ${TRAITS[t].desc}</p>`).join('')}
       <dl class="rows">
+        <dt>Nazionalità</dt><dd>${natName(p)}</dd>
         <dt>Squadra</dt><dd>${t ? esc(teamName(t)) + ' · #' + p.num : p.school ? esc(p.school) : 'Free agent'}</dd>
         ${p.school ? `<dt>Proiezione Draft</dt><dd>${projTxt(p)}</dd>` : ''}
         ${t ? `<dt>Contratto</dt><dd>${fmtM(p.salary)} × ${p.years}</dd>` : ''}
@@ -2886,6 +2917,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { for (const p of Object.values(S.players)) if (p.appeal == null) p.appeal = newAppeal(); S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { for (const p of Object.values(S.players)) { if (p.appeal == null) p.appeal = newAppeal(); if (!p.nat) p.nat = inferNat(p); } S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();

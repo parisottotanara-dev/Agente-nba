@@ -158,7 +158,7 @@ const TRAIT_LINES = {
   avido: ['Ha negoziato da solo la paghetta fino a 18 anni.', 'Tiene un quaderno con ogni dollaro che ha guadagnato.', 'Ha venduto i biglietti per vedere i suoi allenamenti al liceo.', 'Ha chiesto un rimborso spese per un panino offerto a un compagno.', 'Vende online le magliette sudate delle partite.', 'Ha un consulente finanziario per ogni continente.'],
   leale: ['È ancora amico di tutti i suoi compagni delle elementari.', 'Ha rifiutato college più ricchi per restare vicino al suo primo coach.', 'Non ha mai cambiato barbiere in vita sua.', 'Telefona ogni domenica al suo allenatore delle elementari.', 'Porta ancora la fascia della sua prima squadra sotto la divisa.', 'Ha scelto il suo agente stringendogli la mano, senza contratto.'],
   professionista: ['Si allena anche il giorno di Natale.', 'Pesa ogni grammo di quello che mangia.', 'Guarda i video degli avversari fino a notte fonda.', 'Dorme con una mascherina che misura le ore di sonno.', 'Ha una palestra in casa più grande di quella della squadra.', 'Non mangia dolci da quando aveva 15 anni.'],
-  scaramantico: ['Entra in campo sempre col piede sinistro.', 'Indossa gli stessi calzini da quando ha vinto il titolo del liceo.', 'Prima di ogni tiro libero fa lo stesso rito, in sette movimenti.', 'Gira con un cornetto rosso regalato dalla nonna napoletana.', 'Non si taglia i capelli durante i playoff.', 'Siede sempre allo stesso posto sul pullman della squadra.'],
+  scaramantico: ['Entra in campo sempre col piede sinistro.', 'Indossa gli stessi calzini da quando ha vinto il titolo del liceo.', 'Prima di ogni tiro libero fa lo stesso rito, in sette movimenti.', 'Gira con un cornetto rosso portafortuna regalato dalla nonna.', 'Non si taglia i capelli durante i playoff.', 'Siede sempre allo stesso posto sul pullman della squadra.'],
   permaloso: ['Si ricorda ogni critica ricevuta, con data e ora.', 'Una volta ha tolto il saluto a un compagno per una battuta sulle sue scarpe.', 'Legge tutti i commenti su di lui. Proprio tutti.', 'Ha cambiato numero di maglia dopo una battuta di un telecronista.', 'Tiene una lista di chi non lo ha passato in partita.', 'Una volta ha smesso di parlare al cugino per un anno, per un tiro sbagliato a una grigliata.'],
   ambizioso: ['Ha appeso in camera la foto del giocatore che lo ha battuto al liceo, per non dimenticarlo.', 'Dopo ogni vittoria si chiede cosa poteva fare meglio.',
     'Ha chiesto al suo allenatore del college una lista dei suoi difetti. Di cinque pagine.', 'Si è promesso di migliorare un fondamentale nuovo ogni estate.',
@@ -182,15 +182,22 @@ function storyOf(p) {
   if (!p.traits) p.traits = genTraits();
   if (!p.story) {
     const tl = () => pickFresh('t_' + p.traits[0], TRAIT_LINES[p.traits[0]]);
-    const origin = () => `${STORY.originVerb[Math.floor(Math.random() * 3)]} ${pickFresh('place', STORY.place)}, ${pickFresh('family', STORY.family)}.`;
+    const nat = (typeof NATIONS !== 'undefined' && NATIONS[p.nat]) || null;
+    const place = () => nat && nat.places.length ? pickFresh('place_' + p.nat, nat.places) : pickFresh('place', STORY.place);
+    // frasi tipiche degli Stati Uniti (o dell'Italia) solo a chi viene da lì
+    const fit = arr => arr.filter(s => (p.nat === 'USA' || !p.nat || !/football|NASA|protestante|Rucker/.test(s)) && (p.nat === 'ITA' || !/Serie A/.test(s)));
+    const pickFit = (cat, arr) => pickFresh(cat + '_' + (p.nat || 'USA'), fit(arr));
+    const origin = () => `${STORY.originVerb[Math.floor(Math.random() * 3)]} ${place()}, ${pickFit('family', STORY.family)}.`;
     const said = () => { const [who, q] = pickFresh('said', STORY.said); return `Secondo ${who}: "${q}"`; };
     const r = Math.random();
     let parts;
-    if (r < 0.3) parts = [origin(), pickFresh('start', STORY.start), tl()];
+    if (r < 0.3) parts = [origin(), pickFit('start', STORY.start), tl()];
     else if (r < 0.55) parts = [said(), tl(), pickFresh('quirk', STORY.quirk)];
-    else if (r < 0.75) parts = [pickFresh('start', STORY.start), said()];
+    else if (r < 0.75) parts = [pickFit('start', STORY.start), said()];
     else if (r < 0.9) parts = [tl(), pickFresh('quirk', STORY.quirk)];
     else parts = [origin(), tl(), pickFresh('dream', STORY.dream)];
+    // un richiamo al paese d'origine: più spesso per chi viene da fuori
+    if (nat && nat.lines.length && Math.random() < (p.nat === 'USA' ? 0.08 : 0.45)) parts.splice(Math.min(parts.length, 1 + Math.floor(Math.random() * 2)), 0, pickFresh('nat_' + p.nat, nat.lines));
     p.story = parts.join(' ');
   }
   return p.story;
