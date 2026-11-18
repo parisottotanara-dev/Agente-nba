@@ -780,8 +780,8 @@ function fillText(t, d) {
 function fameMult(p) { return p ? clamp(0.3 + (p.ovr - 60) / 22 + p.hype / 110, 0.25, 3) : 1; }
 
 /* ---------- Rapporti ---------- */
-const teamRel = tid => tid == null ? 50 : (S.teamRel[tid] ?? 50);
-const brandRel = b => S.brandRel[b] ?? 50;
+const teamRel = tid => tid == null ? 50 : ((S.teamRel = S.teamRel || {})[tid] ?? 50);
+const brandRel = b => (S.brandRel = S.brandRel || {})[b] ?? 50;
 function changeTeamRel(tid, d) { if (tid == null || !d) return; S.teamRel[tid] = clamp(Math.round(teamRel(tid) + d), 0, 100); }
 function changeBrandRel(b, d) { if (!b || !d) return; S.brandRel[b] = clamp(Math.round(brandRel(b) + d), 0, 100); }
 function relLabel(v) { return v >= 75 ? '😄 ottimo' : v >= 60 ? '🙂 buono' : v >= 40 ? '😐 neutro' : v >= 25 ? '😒 freddo' : '😠 pessimo'; }
@@ -1882,6 +1882,25 @@ let toastTimer = null;
 function hideToast() { const el = document.getElementById('toast'); if (el && el.classList.contains('show')) el.classList.add('hidden'); }
 // un tocco ovunque fa sparire il banner
 let toastAt = 0;
+// pulsanti − / + per le cifre: un tocco = un passo, tenendo premuto scorre veloce
+let stepTimer = null;
+function stepBy(btn) {
+  const box = btn.closest('.stepper'), inp = document.getElementById(box.dataset.id);
+  const v = clamp(+inp.value + +box.dataset.step * +btn.dataset.d, +box.dataset.min, +box.dataset.max);
+  inp.value = v; document.getElementById(box.dataset.id + '-v').textContent = '$' + v + 'k';
+  box.querySelectorAll('.st-btn').forEach(b => { b.disabled = (+b.dataset.d < 0 && v <= +box.dataset.min) || (+b.dataset.d > 0 && v >= +box.dataset.max); });
+  if (btn.disabled) clearInterval(stepTimer);
+}
+document.addEventListener('pointerdown', e => {
+  const btn = e.target.closest && e.target.closest('.st-btn'); if (!btn || btn.disabled) return;
+  e.preventDefault(); stepBy(btn);
+  let n = 0; clearInterval(stepTimer);
+  stepTimer = setInterval(() => { if (++n > 4) stepBy(btn); }, 90);
+});
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => clearInterval(stepTimer)));
+// niente zoom: né con due dita né con il doppio tocco
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
 document.addEventListener('pointerdown', () => { if (Date.now() - toastAt > 500) hideToast(); }, true);
 const TOAST_TITLES = { good: 'Grande!', bad: 'Ops!', warn: 'Attenzione!', goal: 'Obiettivo!', event: 'Imprevisto!', info: 'Info', intel: 'Soffiata!' };
 function toast(msg, type, title) {
@@ -2245,7 +2264,7 @@ const UI = {
       <ul class="tk-log">${t.log.slice(-5).map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       <div class="neg-form">
         <label>Commissione che chiedi: <b id="tk-cv">${sug.comm}%</b><input id="tk-c" type="range" min="1" max="4" step="0.5" value="${sug.comm}" oninput="document.getElementById('tk-cv').textContent=this.value+'%'"></label>
-        <label>Bonus alla firma (migliaia di $)<input id="tk-b" type="number" min="0" step="5" value="${sug.bonus}"></label>
+        <div class="lbl">Bonus alla firma che offri<div class="stepper" data-id="tk-b" data-step="5" data-min="0" data-max="${Math.max(100, Math.ceil(t.ask.bonus * 2 / 5) * 5)}"><button type="button" class="st-btn" data-d="-1" aria-label="Meno 5 mila dollari" ${sug.bonus <= 0 ? 'disabled' : ''}>−</button><output id="tk-b-v">$${sug.bonus}k</output><button type="button" class="st-btn" data-d="1" aria-label="Più 5 mila dollari">+</button><input type="hidden" id="tk-b" value="${sug.bonus}"></div><small>a passi di $5k · tieni premuto per andare veloce</small></div>
       </div>
       <div class="promises"><b>🤝 Promesse</b> <span class="small muted">valgono come moneta, ma vanno mantenute entro fine stagione regolare</span>
         ${Object.entries(PROMISES).filter(([k]) => promiseFeasible(p, k)).map(([k, pr]) => `<label class="pr-row"><input type="checkbox" id="tk-pr-${k}"><span>${pr.label}${pr.likes.some(t => hasTrait(p, t)) ? ' <span class="good small">· gli piace molto</span>' : ''}</span></label>`).join('')}</div>
@@ -2612,6 +2631,6 @@ const Tutorial = {
 };
 
 load();
-if (S) { recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
+if (S) { S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; recInit(); S.staff.hq = S.staff.hq || 0; S.staff.academy = S.staff.academy || 0; if (!S.chal || S.chal.season !== S.season) newChallenges(); for (const p of Object.values(S.players)) capPot(p); S.goalRewards = S.goalRewards || {}; for (const k of Object.keys(S.goals || {})) if (!S.goalRewards[k]) { const t = giveReward(k); if (t) addNews(`🎁 Ricompensa per un obiettivo già raggiunto (${esc(GOALS.find(x => x[0] === k)[1])}): ${esc(t)}.`, 'gold'); } for (const p of Object.values(S.players)) if (!p.traits) p.traits = genTraits(); S.talks = S.talks || {}; S.staff.informer = S.staff.informer || 0; S.intel = S.intel || []; S.recentEv = S.recentEv || []; S.teamRel = S.teamRel || {}; S.brandRel = S.brandRel || {}; S.inbox = (S.inbox || []).filter(e => e.ev && e.data && e.data.mult); }
 UI.render();
 Cloud.init();
