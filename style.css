@@ -593,3 +593,13 @@ input, select, textarea { font-size: max(16px, 1em); }
 
 div.rules { max-width: 420px; margin: 18px auto 0; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: left; }
 div.rules p { margin: 0 0 10px; }
+
+/* conto in rosso e prestiti */
+.debt-box { display: flex; gap: 12px; align-items: flex-start; margin: 14px 0 4px; padding: 12px 14px; border-radius: 14px;
+  background: #3d1d1f; border: 1px solid #8a3036; color: #ffd9d6; }
+.debt-box > .ic { width: 26px; height: 26px; color: var(--bad); margin-top: 2px; }
+.debt-box > div { display: grid; gap: 6px; justify-items: start; }
+.debt-box b { color: #fff; font-size: 15px; }
+.debt-box span { font-size: 13.5px; }
+.bank p { margin: 0 0 10px; }
+.loan-sum { margin: 12px 0 4px; font-size: 14px; }

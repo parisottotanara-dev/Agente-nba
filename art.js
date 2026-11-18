@@ -192,7 +192,7 @@ function ic(name, cls = '') {
 // Icone degli imprevisti e delle notizie: le emoji del testo diventano una famiglia di icone
 const EMO_CAT = [
   ['mic', '🎤📺🎬🎙🗞🎥📱📸📲🖼🎨📖📢📣🗣🗯🪧©💻📜📰'],
-  ['coin', '💼🪙💸💵📉📈🔐🎲🔨📊🍕💰'],
+  ['coin', '💼🪙💸💵📉📈🔐🎲🔨📊🍕💰🏦'],
   ['bandage', '🚑🤒🦴🧊🦷🦵🩹🏥🧪💧🥗🧘🏋😴🥽⏰🍔'],
   ['heart', '💍👶🐶❤🧒💛🤲🕊🎗🏠🏫🌱🧓🎁👨💚'],
   ['party', '🎮🛋😂🐭👗👟🥣🏎🍦🖋🦔🪒🧔💇🦸🥸🔢📿📦🏝♟🍝🪑🚀🥂👽👯🧦🎩🤖🦊🪩🎉🎈🪞😾🦁'],

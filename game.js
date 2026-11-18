@@ -20,7 +20,7 @@ const fmtM = m => '$' + r1(m).toLocaleString('it-IT', { minimumFractionDigits: 1
 function fmt$(d) {
   const s = d < 0 ? '-' : ''; d = Math.abs(d);
   if (d >= 1e6) return s + '$' + (d / 1e6).toLocaleString('it-IT', { maximumFractionDigits: 2 }) + 'M';
-  if (d >= 1e3) return s + '$' + Math.round(d / 1e3).toLocaleString('it-IT') + 'k';
+  if (d >= 1e3) return s + '$' + (d < 1e4 ? (d / 1e3).toLocaleString('it-IT', { maximumFractionDigits: 1 }) : Math.round(d / 1e3).toLocaleString('it-IT')) + 'k';
   return s + '$' + Math.round(d);
 }
 
@@ -296,6 +296,49 @@ const upgradeCost = (lvl, k) => (UPGRADE_COSTS[k] || [60000, 150000, 320000, 650
 const staffStep = k => ({ office: 4000, hq: 6000, academy: 5000 })[k] || 3000;
 const weeklyCost = () => 6000 + 3000 * (S.staff.scout + S.staff.legal + S.staff.marketing + (S.staff.informer || 0)) + 4000 * S.staff.office
   + 6000 * (S.staff.hq || 0) + 5000 * (S.staff.academy || 0) + 1200 * Math.max(0, S.clients.length - 3);
+/* ---------- Prestiti della banca ----------
+   Un prestito alla volta, da restituire a rate settimanali in 2-5 stagioni.
+   Quanto ti prestano e a che tasso dipende da reputazione e incassi. */
+function loanOffer() {
+  const yearly = weeklyIncomeEstimate() * TURNS_PER_YEAR;
+  const max = Math.round(clamp(150000 + S.rep * 12000 + yearly * 1.5, 150000, 8000000) / 50000) * 50000;
+  const rate = r1(clamp(14 - S.rep * 0.08 - (S.loansRepaid || 0) * 0.5, 5, 14));
+  return { max, rate };
+}
+function loanPlan(amount, years) {
+  const { rate } = loanOffer(), total = Math.round(amount * (1 + rate / 100 * years));
+  return { rate, total, perWeek: Math.ceil(total / (years * TURNS_PER_YEAR) / 100) * 100 };
+}
+const loanRate = () => S.loan ? Math.min(S.loan.perWeek, S.loan.left) : 0;
+function takeLoan(amount, years) {
+  if (S.loan) return { msg: 'Hai già un prestito in corso: prima finisci di pagarlo.', type: 'bad' };
+  const { max } = loanOffer();
+  amount = clamp(Math.round(amount / 1000) * 1000, 50000, max); years = clamp(Math.round(years), 2, 5);
+  const pl = loanPlan(amount, years);
+  S.loan = { amount, years, rate: pl.rate, total: pl.total, left: pl.total, perWeek: pl.perWeek, season: S.season };
+  S.cash += amount; // non è un guadagno: non conta nelle entrate della stagione
+  changeRep(-0.5);
+  addNews(`🏦 La banca ti presta ${fmt$(amount)}: rata di ${fmt$(pl.perWeek)} a settimana per ${years} stagioni (${pl.rate}% l'anno).`, 'warn');
+  return { msg: `Ricevuti ${fmt$(amount)}. Rata: ${fmt$(pl.perWeek)} a settimana.`, type: 'good' };
+}
+function payLoanWeek() {
+  if (!S.loan) return;
+  const pay = loanRate(); spend(pay); S.loan.left -= pay;
+  if (S.loan.left <= 0) {
+    S.loan = null; S.loansRepaid = (S.loansRepaid || 0) + 1; changeRep(0.5);
+    addNews('🏦 Hai finito di pagare il prestito. In banca adesso ti salutano con un sorriso.', 'good');
+  }
+}
+function repayLoan() {
+  if (!S.loan) return;
+  // chiudendolo prima paghi il capitale che resta più una piccola penale
+  const cost = loanPayoff();
+  if (S.cash < cost) return { msg: `Per chiudere il prestito servono ${fmt$(cost)}.`, type: 'bad' };
+  spend(cost); S.loan = null; S.loansRepaid = (S.loansRepaid || 0) + 1; changeRep(0.5);
+  addNews(`🏦 Hai chiuso in anticipo il prestito pagando ${fmt$(cost)}.`, 'good');
+  return { msg: `Prestito chiuso con ${fmt$(cost)}.`, type: 'good' };
+}
+const loanPayoff = () => S.loan ? Math.round(S.loan.amount * S.loan.left / (S.loan.total || S.loan.left) * 1.03 / 100) * 100 : 0;
 function weeklyIncomeEstimate() {
   let inc = 0;
   for (const p of clients()) {
@@ -1551,6 +1594,7 @@ function advance() {
   expireOffers();
   let played = false;
   spend(weeklyCost());
+  payLoanWeek();
   S.rep = r1(S.rep * (0.997 + (S.staff.hq || 0) * 0.0005)); // la fama va mantenuta (una bella sede aiuta)
   for (const p of clients()) for (const sp of p.sponsors) earn(sp.value * 1e6 * SPONSOR_CUT / TURNS_PER_YEAR);
 
@@ -1604,7 +1648,7 @@ function advance() {
   if (S.cash < 0) {
     S.debtWeeks++;
     if (S.debtWeeks >= 4) { S.over = true; addNews('☠️ Licenza revocata per insolvenza. Fine della carriera.', 'bad'); }
-    else addNews(`⚠️ Conto in rosso! Hai ${4 - S.debtWeeks} settiman${4 - S.debtWeeks > 1 ? 'e' : 'a'} per rientrare.`, 'bad');
+    else addNews(`⚠️ Conto in rosso! Hai ${4 - S.debtWeeks} settiman${4 - S.debtWeeks > 1 ? 'e' : 'a'} per rientrare${S.loan ? '' : ', oppure chiedi un prestito alla banca'}.`, 'bad');
   } else S.debtWeeks = 0;
 
   checkGoals();
@@ -1993,6 +2037,7 @@ function stepSet(box, v) {
   const inp = document.getElementById(box.dataset.id), min = +box.dataset.min, max = +box.dataset.max;
   v = clamp(Math.round(v * 10) / 10, min, max);
   inp.value = v; inp.style.width = (String(v).length + 0.7) + 'ch';
+  inp.dispatchEvent(new Event('input'));
   box.querySelectorAll('.st-btn').forEach(b => { b.disabled = (+b.dataset.d < 0 && v <= min) || (+b.dataset.d > 0 && v >= max); });
   return v;
 }
@@ -2115,7 +2160,7 @@ const UI = {
     const stars = Math.round(S.rep / 20);
     const ranking = this.agencyRanking();
     const myPos = ranking.findIndex(r => r.mine) + 1;
-    const net = weeklyIncomeEstimate() - weeklyCost();
+    const net = weeklyIncomeEstimate() - weeklyCost() - loanRate();
     const hpT = hp && teamOf(hp);
     const feed = S.news.slice(0, 12).map(n => {
       const m = n.text.match(/^(\p{Extended_Pictographic}️?)\s*/u);
@@ -2133,6 +2178,9 @@ const UI = {
         <div class="chip" id="t-cl"><small>👥 Clienti</small><b>${cl.length} / ${capacity()}</b><span class="muted">${myPos}ª agenzia</span></div>
       </div>
 
+      ${S.cash < 0 ? `<div class="debt-box">${ic('alert')}<div><b>Sei in rosso di ${fmt$(-S.cash)}</b>
+        <span>${S.debtWeeks ? `Hai ${4 - S.debtWeeks} settiman${4 - S.debtWeeks > 1 ? 'e' : 'a'} per rientrare, poi ti ritirano la licenza.` : 'Se resti in rosso per 4 settimane ti ritirano la licenza.'}</span>
+        ${S.loan ? `<span>Hai già un prestito in corso: la banca non ti dà altro.</span>` : `<button class="btn primary sm" onclick="UI.loanModal()">Chiedi un prestito</button>`}</div></div>` : ''}
       <div id="t-ev">
       <div class="sec"><h2>Questa settimana</h2>${S.inbox.length ? `<span class="muted small">${S.inbox.length} da decidere</span>` : ''}</div>
       ${S.inbox.length ? `<div class="must" role="note">${ic('alert')} Decidi prima di avanzare</div><div class="evs">${S.inbox.map(e => this.eventCard(e)).join('')}</div>`
@@ -2607,7 +2655,7 @@ const UI = {
 
   /* ---------- Staff ---------- */
   v_staff() {
-    const net = weeklyIncomeEstimate() - weeklyCost();
+    const net = weeklyIncomeEstimate() - weeklyCost() - loanRate();
     return `<h2>Staff e strutture</h2>
       <p class="muted small">Costi fissi attuali: <b>${fmt$(weeklyCost())}</b> a settimana · entrate medie <b>${fmt$(weeklyIncomeEstimate())}</b> · saldo <b class="${net >= 0 ? 'good' : 'bad'}">${net >= 0 ? '+' : ''}${fmt$(net)}</b>. Ogni livello aumenta le spese settimanali.</p>
       ${net < 0 ? '<div class="note warn">⚠️ Stai spendendo più di quanto incassi: prima di potenziare, trova nuovi clienti o firma contratti più ricchi.</div>' : ''}
@@ -2618,6 +2666,11 @@ const UI = {
           ${lvl < 5 && net - staffStep(k) < 0 ? `<p class="small bad">Con questo livello andresti in perdita di ${fmt$(staffStep(k) - net)} a settimana.</p>` : ''}
           ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
       }).join('')}</div>
+      <h2>Banca</h2>
+      <div class="card bank">${S.loan ? `<p>Prestito di <b>${fmt$(S.loan.amount)}</b> al ${S.loan.rate}% l'anno. Rata <b>${fmt$(S.loan.perWeek)}</b> a settimana, restano da pagare <b>${fmt$(S.loan.left)}</b>.</p>
+        <button class="btn sm" onclick="UI.doRepayLoan()" ${S.cash < loanPayoff() ? 'disabled' : ''}>Chiudilo subito (${fmt$(loanPayoff())})</button>`
+        : `<p class="muted small">La banca ti può prestare fino a <b>${fmt$(loanOffer().max)}</b>, da restituire a rate in qualche stagione. Più sei famoso, meno interessi paghi.</p>
+        <button class="btn sm" onclick="UI.loanModal()">Chiedi un prestito</button>`}</div>
       <h2>Investimenti</h2>
       <p class="muted small">Quando l'agenzia è grande, i soldi servono a crescere ancora. Ogni 5% di una squadra rende il 4% l'anno in dividendi, migliora il rapporto con lei e le sue offerte ai tuoi clienti. Con il 51% diventi presidente.</p>
       ${Object.keys(S.stakes || {}).length ? `<div class="rels">${Object.entries(S.stakes).map(([tid, pct]) => `<span class="rel">${esc(teamName(S.teams[tid]))} <b>${pct}%</b></span>`).join('')}</div>` : ''}
@@ -2642,6 +2695,32 @@ const UI = {
   /* ---------- Modale ---------- */
   openModal(html) { hideToast(); document.getElementById('modal-body').innerHTML = deEmo(html); document.getElementById('modal').classList.remove('hidden'); },
   closeModal() { document.getElementById('modal').classList.add('hidden'); },
+  loanModal() {
+    if (S.loan) return toast('Hai già un prestito in corso.', 'bad');
+    const { max, rate } = loanOffer();
+    const need = Math.max(50, Math.ceil((-S.cash + weeklyCost() * 6) / 50000) * 50);
+    const v = Math.min(max / 1000, need);
+    this.openModal(`<h3>Prestito dalla banca</h3>
+      <p class="small">Con la tua reputazione la banca ti presta fino a <b>${fmt$(max)}</b> al <b>${rate}%</b> l'anno. Lo restituisci a rate ogni settimana.</p>
+      <div class="neg-form">
+        <div class="lbl">Quanto chiedi${stepper('loan-a', v, 50, 50, max / 1000, 'k')}</div>
+        <label>In quante stagioni lo restituisci<select id="loan-y" onchange="UI.loanCalc()">${[2, 3, 4, 5].map(y => `<option value="${y}" ${y === 3 ? 'selected' : ''}>${y} stagioni</option>`).join('')}</select></label>
+      </div>
+      <p class="loan-sum" id="loan-sum"></p>
+      <div class="actions"><button class="btn primary" onclick="UI.doLoan()">Firma il prestito</button><button class="btn" onclick="UI.closeModal()">Lascia stare</button></div>`);
+    document.getElementById('loan-a').addEventListener('input', () => this.loanCalc());
+    this.loanCalc();
+  },
+  loanCalc() {
+    const a = (+document.getElementById('loan-a').value || 0) * 1000, y = +document.getElementById('loan-y').value;
+    const pl = loanPlan(a, y), el = document.getElementById('loan-sum');
+    if (el) el.innerHTML = `Rata: <b>${fmt$(pl.perWeek)}</b> a settimana per ${y} stagioni. In tutto restituisci <b>${fmt$(pl.total)}</b>.`;
+  },
+  doLoan() {
+    const r = takeLoan((+document.getElementById('loan-a').value || 0) * 1000, +document.getElementById('loan-y').value);
+    save(); this.closeModal(); this.render(); toast(r.msg, r.type, r.type === 'good' ? 'Prestito firmato' : undefined);
+  },
+  doRepayLoan() { const r = repayLoan(); save(); this.render(); if (r) toast(r.msg, r.type); },
   gameOver() {
     this.openModal(`<h3>Licenza revocata</h3><p>La tua agenzia è rimasta in rosso troppo a lungo.</p>
       <p>Hai resistito fino alla stagione ${seasonLabel()} con reputazione ${S.rep.toFixed(1)} e ${Object.keys(S.goals).length} obiettivi raggiunti.</p>
