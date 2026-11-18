@@ -282,11 +282,11 @@ async function gunzip(b64) {
 /* ================================================================== */
 const STAFF = {
   scout: { name: 'Rete di scout', icon: '🔭', desc: 'Stime più precise sul potenziale dei prospetti e sconto sulle osservazioni.' },
-  legal: { name: 'Ufficio legale', icon: '⚖️', desc: '+3% sul tetto massimo che le squadre sono disposte a pagare.' },
-  marketing: { name: 'Marketing', icon: '📣', desc: '+10% valore sponsor e +3% probabilità di convincere nuovi clienti.' },
-  office: { name: 'Uffici', icon: '🏢', desc: '+3 posti cliente per livello.' },
-  hq: { name: 'Sede', icon: '🏙️', desc: 'Una sede più prestigiosa: +4% di probabilità che i giocatori accettino di incontrarti, e la tua reputazione cala più lentamente.' },
-  academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma dei ragazzi che arrivano al Draft già legati a te. Più è grande, più ne escono e più sono forti, e più spesso nasce un 💎 talento generazionale da trasformare in campione.' },
+  legal: { name: 'Ufficio legale', icon: '⚖️', desc: 'Avvocati più bravi: le squadre finiscono per offrire qualcosa in più ai tuoi clienti.' },
+  marketing: { name: 'Marketing', icon: '📣', desc: 'Il tuo nome gira di più: gli sponsor pagano meglio i tuoi clienti e i giocatori ti conoscono già quando li contatti.' },
+  office: { name: 'Uffici', icon: '🏢', desc: 'Uffici più grandi e più collaboratori: puoi seguire più clienti.' },
+  hq: { name: 'Sede', icon: '🏙️', desc: 'Una sede che fa colpo: i giocatori accettano più volentieri di incontrarti e il tuo nome resta sulla bocca di tutti.' },
+  academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma ragazzi che arrivano al Draft già legati a te. Un\'accademia più grande attira ragazzi migliori, e ogni tanto ci passa un talento generazionale da trasformare in campione.' },
   informer: { name: 'Informatore', icon: '🕵️', desc: 'Ti passa soffiate sui prospetti del prossimo Draft: potenziale, chi vuole essere seguito, chi sta per firmare con un rivale. All\'inizio è scarso e a volte sbaglia.' },
 };
 const UPGRADE_COSTS = { hq: [250000, 700000, 1800000, 4500000, 10000000], academy: [400000, 1000000, 2500000, 5000000, 9000000] };
@@ -2377,9 +2377,9 @@ const UI = {
         <label>Commissione che chiedi: <b id="tk-cv">${sug.comm}%</b><input id="tk-c" type="range" min="1" max="4" step="0.5" value="${sug.comm}" oninput="document.getElementById('tk-cv').textContent=this.value+'%'"></label>
         <div class="lbl">Bonus alla firma che offri${stepper('tk-b', sug.bonus, 5, 0, Math.max(100, Math.ceil(t.ask.bonus * 2 / 5) * 5), 'k')}<small>tocca − e + (passi di $5k, tieni premuto per andare veloce) oppure tocca la cifra e scrivila</small></div>
       </div>
-      <div class="promises"><b>🤝 Promesse</b> <span class="small muted">valgono come moneta, ma vanno mantenute entro fine stagione regolare</span>
+      <div class="promises"><b>🤝 Promesse</b> <span class="small muted">possono convincerlo, ma poi vanno mantenute entro fine stagione regolare</span>
         ${Object.entries(PROMISES).filter(([k]) => promiseFeasible(p, k)).map(([k, pr]) => `<label class="pr-row"><input type="checkbox" id="tk-pr-${k}"><span>${pr.label}${pr.likes.some(t => hasTrait(p, t)) ? ' <span class="good small">· gli piace molto</span>' : ''}</span></label>`).join('')}</div>
-      <p class="small muted">Più commissione chiedi, più guadagni ogni anno, ma più si irrita. Un bonus più ricco di quello che vuole compensa un po' (al massimo mezzo punto di commissione). Se tiri troppo si offende e chiede di più. Un'agenzia rivale può sempre intromettersi: non tirarla per le lunghe.</p>
+      <p class="small muted">Più commissione chiedi, più guadagni ogni anno, ma più si irrita. Un bonus alla firma generoso lo rende più disponibile. Se tiri troppo si offende e chiede di più. Un'agenzia rivale può sempre intromettersi: non tirarla per le lunghe.</p>
       <div class="actions">
         <button class="btn primary" onclick="UI.doTalkOffer(${pid})">Fai l'offerta</button>
         <button class="btn good" onclick="UI.doTalkAccept(${pid})">Accetta la sua richiesta</button>
@@ -2413,7 +2413,7 @@ const UI = {
       : p.team == null ? `Consiglia ${esc(p.name)} a una squadra: se ti ascoltano, gli fanno un'offerta.`
         : `Proponi ${esc(p.name)} a un'altra squadra: se ti ascoltano, organizzano uno scambio.`;
     this.openModal(`<h3>${ic('megaphone')} Consiglia ${esc(p.name)}</h3><p class="small">${intro}</p>
-      <p class="small muted">Più è buono il tuo rapporto con la squadra, più ti danno retta. Se non ti ascoltano, il rapporto cala un po'. Una volta a settimana per giocatore.</p>
+      <p class="small muted">Più è buono il tuo rapporto con la squadra, più ti danno retta. Se non ti ascoltano, il rapporto cala un po'. Puoi parlarne con una squadra a settimana.</p>
       ${done ? '<p class="warn">Ne hai già parlato con una squadra questa settimana.</p>' : ''}
       <div class="rec-list">${teams.map(({ t, c, slot, rel }) => `<div class="rec">
         <span class="rec-t"><b>${esc(teamName(t))}</b><small>${p.school ? `scelta #${slot} · ` : ''}rapporto ${relLabel(rel)}</small></span>
@@ -2676,7 +2676,7 @@ const Tutorial = {
     { t: 't-ev', h: 'Gli imprevisti', x: 'Ogni tanto succede qualcosa: videoclip, tatuaggi, sponsor, litigi col coach… Sotto ogni scelta vedi cosa succede e con che probabilità. Alcune scelte cambiano anche l\'aspetto del giocatore. Più raramente arriva un <b>⚡ colpo di scena</b> che può cambiare una carriera, in bene o in male.' },
     { t: 't-pls', h: 'I tuoi giocatori', x: 'Per ognuno vedi la <b>prossima partita</b>, la posizione in classifica della squadra, le medie di punti, rimbalzi e assist e il <b>voto dell\'ultima gara</b>. Tocca un giocatore per aprire la sua scheda: lì trovi carattere, storia e il pulsante <b>Consiglia</b>.' },
     { t: 't-chal', h: 'Sfide della stagione', x: 'Ogni stagione arrivano 3 sfide nuove, sempre un po\' più difficili, con un premio in soldi e reputazione. Gli <b>obiettivi</b> qui sotto invece sono traguardi di carriera, una volta sola.' },
-    { t: null, h: 'Il carattere', x: 'Ogni giocatore ha 1 o 2 tratti e una sua storia. Il carattere decide che imprevisti gli capitano: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Cambia anche le regole: un 🤝 leale è difficile da portarti via, un 💰 attaccato ai soldi chiede di più.' },
+    { t: null, h: 'Il carattere', x: 'Ogni giocatore ha il suo carattere e la sua storia, e il carattere si vede in quello che combina: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Conta anche negli affari: un leale è difficile da portarti via, uno attaccato ai soldi chiede di più.' },
     { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
     { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: tratti stipendio e anni, guardi cosa preferisce il giocatore e puoi giocare la carta dell\'<b>asta</b> (occhio ai bluff). Le offerte scadono! Usa <b>Contatta</b> per tenerli contenti, <b>Camp</b> per farli allenare con una leggenda e <b>Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
     { t: 'tab-market', h: 'Mercato', x: 'Qui trovi nuovi clienti: <b>prospetti</b> del college, <b>free agent</b> e giocatori di altre agenzie. Con <b>🔭 Osserva</b> scopri il loro potenziale, con <b>🤝 Coltiva</b> crei un legame prima del Draft. <b>Proponi</b> chiede un incontro: se accetta inizia una vera trattativa. Tu offri commissione, bonus e <b>promesse</b> da mantenere; lui fa una controfferta e ha una pazienza di 2-5 🏀.' },
