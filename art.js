@@ -1,4 +1,4 @@
-/* Super Agente NBA — grafica: aspetto dei giocatori, avatar e illustrazione della Home (SVG). */
+/* Hoop Agent — grafica: aspetto dei giocatori, avatar e illustrazione della Home (SVG). */
 'use strict';
 
 const SKINS = ['#f1c7a0', '#e0ac7e', '#c68642', '#a0662f', '#7a4a2a', '#5c3920'];

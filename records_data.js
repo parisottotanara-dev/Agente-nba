@@ -1,4 +1,4 @@
-/* Super Agente NBA — record reali della NBA (fino alla stagione 2024-25), con i nomi storpiati del gioco.
+/* Hoop Agent — record reali della NBA (fino alla stagione 2024-25), con i nomi storpiati del gioco.
    I valori sono quelli reali, arrotondati dove serve. */
 'use strict';
 

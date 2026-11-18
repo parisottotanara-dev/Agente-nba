@@ -1,4 +1,4 @@
-/* Super Agente NBA — carattere e storia dei giocatori.
+/* Hoop Agent — carattere e storia dei giocatori.
    Ogni giocatore ha 1 o 2 tratti. I tratti:
    - rendono più probabili (boost) o meno probabili (dampen) certi imprevisti;
    - sbloccano imprevisti tutti loro (campo "trait" negli eventi qui sotto);

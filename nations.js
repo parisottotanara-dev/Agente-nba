@@ -1,4 +1,4 @@
-/* Super Agente NBA — nazionalità dei giocatori.
+/* Hoop Agent — nazionalità dei giocatori.
    Ogni paese ha i suoi nomi, i posti dove si cresce e qualche riga che richiama le origini nella storia del giocatore.
    w = quanto è frequente tra i giocatori inventati (gli Stati Uniti sono la grande maggioranza, come nella NBA vera). */
 'use strict';

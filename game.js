@@ -1,4 +1,4 @@
-/* Super Agente NBA — gioco manageriale: sei un procuratore sportivo nel basket americano.
+/* Hoop Agent — gioco manageriale: sei un procuratore sportivo nel basket americano.
    Squadre e giocatori sono inventati. Tutto gira nel browser, salvataggio in localStorage. */
 'use strict';
 
@@ -335,7 +335,7 @@ function openFeedback() {
   window.open(FEEDBACK_URL + (FEEDBACK_URL.includes('?') ? '&' : '?') + q, '_blank', 'noopener');
 }
 // esporta: un file da tenere (o un codice da copiare) con tutta la partita
-function saveFileName() { return `super-agente-nba-${(S.agency || 'partita').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${S.season}.json`; }
+function saveFileName() { return `hoop-agent-${(S.agency || 'partita').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${S.season}.json`; }
 async function exportSave() {
   save(); S.lastExport = S.season; save();
   // dentro la chat di Claude non si possono scaricare file: lì si usa il codice
@@ -344,7 +344,7 @@ async function exportSave() {
   track('salvataggio-esportato');
   try {
     const file = new File([text], name, { type: 'application/json' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Salvataggio Super Agente NBA' }); return { msg: 'Salvataggio pronto: tienilo in un posto sicuro (File, Drive, una mail a te stesso).', type: 'good' }; }
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Salvataggio Hoop Agent' }); return { msg: 'Salvataggio pronto: tienilo in un posto sicuro (File, Drive, una mail a te stesso).', type: 'good' }; }
   } catch (e) { if (e && e.name === 'AbortError') return { msg: 'Esportazione annullata.', type: 'info' }; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
@@ -2390,7 +2390,7 @@ const UI = {
     const has = hasLocalSave();
     return `<div class="start">
       <div class="start-hero">${heroSVG(null)}</div>
-      <h1>Super <span>Agente</span> NBA</h1>
+      <h1>Hoop <span>Agent</span></h1>
       <p>Un telefono, due clienti e trecentomila dollari per arrivare in cima alla NBA.</p>
       ${UI.installHint()}
       <form onsubmit="event.preventDefault(); UI.start(this)">
@@ -2430,7 +2430,7 @@ const UI = {
   importCode() { this.importText(document.getElementById('imp-code').value); },
   async importText(text) {
     const obj = await readSave(text), err = document.getElementById('imp-err');
-    if (!obj) { if (err) { err.hidden = false; err.textContent = 'Questo non sembra un salvataggio di Super Agente NBA. Controlla di aver copiato tutto il codice.'; } return; }
+    if (!obj) { if (err) { err.hidden = false; err.textContent = 'Questo non sembra un salvataggio di Hoop Agent. Controlla di aver copiato tutto il codice.'; } return; }
     const r = applyImport(obj); this.closeModal(); toast(r.msg, r.type, r.type === 'good' ? 'Partita caricata' : undefined);
   },
   start(f) { track('nuova-partita'); newGame(f.agency.value.trim(), f.agent.value.trim()); this.tab = 'home'; this.render(); window.scrollTo(0, 0); setTimeout(() => Tutorial.start(), 400); },

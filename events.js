@@ -1,4 +1,4 @@
-/* Super Agente NBA — imprevisti settimanali.
+/* Hoop Agent — imprevisti settimanali.
    Segnaposto nel testo: {P} il tuo cliente, {T} la sua squadra, {C} un personaggio famoso,
    {B} uno sponsor, {R} un'agenzia rivale, {N} un altro giocatore.
    Effetti (fx): cash (in migliaia di $), rep, mor (morale), hype, ovr, inj (settimane ferme),

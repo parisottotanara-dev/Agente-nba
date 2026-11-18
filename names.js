@@ -1,4 +1,4 @@
-/* Super Agente NBA — nomi parodia. Tutto è caricatura: squadre, sponsor, star e personaggi famosi
+/* Hoop Agent — nomi parodia. Tutto è caricatura: squadre, sponsor, star e personaggi famosi
    sono storpiati apposta. Rose basate sulla stagione 2025-26 (possono esserci scambi recenti mancanti). */
 'use strict';
 

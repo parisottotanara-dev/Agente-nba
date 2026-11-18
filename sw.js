@@ -1,9 +1,9 @@
-/* Super Agente NBA — service worker: rende il gioco installabile e giocabile anche offline.
+/* Hoop Agent — service worker: rende il gioco installabile e giocabile anche offline.
    Strategia "prima la rete": con internet si usano sempre i file aggiornati,
    senza internet si gioca con la copia salvata sul telefono. */
 'use strict';
 
-const CACHE = 'agente-nba-v29';
+const CACHE = 'hoop-agent-v30';
 const APP = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './names.js', './nations.js', './events.js', './events_extra.js', './traits.js', './tuning.js', './records_data.js', './art.js', './game.js',

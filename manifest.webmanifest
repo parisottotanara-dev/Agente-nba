@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Super Agente NBA",
-  "short_name": "Agente NBA",
+  "name": "Hoop Agent",
+  "short_name": "Hoop Agent",
   "description": "Gioco manageriale: guida un'agenzia di procuratori nel basket americano.",
   "lang": "it",
   "start_url": "./",

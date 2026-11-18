@@ -1,4 +1,4 @@
-/* Super Agente NBA — regolazioni degli imprevisti.
+/* Hoop Agent — regolazioni degli imprevisti.
    cond: livello minimo (ovr) o massimo (max) del giocatore perché l'imprevisto abbia senso per la sua carriera.
    ch: per ogni scelta (indice da 0)
      ask: chi deve accettare la richiesta → 'player' (il tuo cliente), 'team' (la sua squadra),

@@ -1,4 +1,4 @@
-# 🏀 Super Agente NBA
+# 🏀 Hoop Agent
 
 Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, star, sponsor e personaggi famosi hanno nomi storpiati (LeBonno James, Los Angeles Fakers, Naik…); gli altri giocatori sono inventati.
 

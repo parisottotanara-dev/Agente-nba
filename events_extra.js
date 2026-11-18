@@ -1,4 +1,4 @@
-/* Super Agente NBA — imprevisti speciali.
+/* Hoop Agent — imprevisti speciali.
    rare: true    → capitano raramente, ma possono cambiare una carriera (in bene o in male).
    college: true → solo per i prospetti al college, prima del Draft.
    {TD} = una squadra NBA che segue il prospetto. */

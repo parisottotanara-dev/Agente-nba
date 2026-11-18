@@ -8,5 +8,5 @@
     <path d="M150 130 Q230 236 150 342"/>
     <path d="M362 130 Q282 236 362 342"/>
   </g>
-  <text x="256" y="470" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="64" fill="#e6edf3" text-anchor="middle">AGENTE</text>
+  <text x="256" y="470" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="58" fill="#e6edf3" text-anchor="middle" letter-spacing="2">HOOP AGENT</text>
 </svg>
