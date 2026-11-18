@@ -301,6 +301,78 @@ const Cloud = {
   },
   async clear() { clearTimeout(this.timer); if (this.doc) try { await this.doc.delete(); } catch (e) { /* ignora */ } },
 };
+/* ================================================================== */
+/* Pareri, statistiche anonime e copia del salvataggio                 */
+/* ================================================================== */
+// Indirizzo del modulo per i pareri (Tally o Google Form). Vuoto = non ancora pronto.
+const FEEDBACK_URL = '';
+const GAME_VERSION = '1.0';
+// Statistiche anonime senza cookie (GoatCounter): si caricano solo dal sito, non dalla chat.
+function track(name) {
+  try {
+    const go = () => window.goatcounter && window.goatcounter.count && window.goatcounter.count({ path: 'evento/' + name, title: name, event: true });
+    if (window.goatcounter && window.goatcounter.count) go(); else setTimeout(go, 3000);
+  } catch (e) { /* le statistiche non devono mai bloccare il gioco */ }
+}
+// chi torna a giocare: il primo giorno e l'ultimo giorno di gioco restano solo su questo dispositivo
+function trackVisit() {
+  try {
+    const today = new Date().toISOString().slice(0, 10), K = 'superAgenteNBA.visite';
+    const v = JSON.parse(localStorage.getItem(K) || 'null') || { first: today, last: null };
+    if (v.last !== today) {
+      const days = Math.round((new Date(today) - new Date(v.first)) / 864e5);
+      if (v.last) track(days <= 1 ? 'ritorno-giorno-dopo' : days <= 7 ? 'ritorno-entro-7-giorni' : days <= 30 ? 'ritorno-entro-30-giorni' : 'ritorno-dopo-30-giorni');
+      else track('prima-visita');
+      v.last = today; localStorage.setItem(K, JSON.stringify(v));
+    }
+  } catch (e) { /* ignora */ }
+}
+function openFeedback() {
+  track('parere-aperto');
+  if (!FEEDBACK_URL) return toast('Il modulo per i pareri arriva a breve. Grazie per la pazienza!', 'info', 'Quasi pronto');
+  const q = new URLSearchParams({ versione: GAME_VERSION, stagione: S ? seasonLabel() : 'nessuna', stagioni_giocate: S ? S.history.length : 0,
+    clienti: S ? S.clients.length : 0, dispositivo: /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'computer' });
+  window.open(FEEDBACK_URL + (FEEDBACK_URL.includes('?') ? '&' : '?') + q, '_blank', 'noopener');
+}
+// esporta: un file da tenere (o un codice da copiare) con tutta la partita
+function saveFileName() { return `super-agente-nba-${(S.agency || 'partita').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${S.season}.json`; }
+async function exportSave() {
+  save(); S.lastExport = S.season; save();
+  const text = JSON.stringify(S), name = saveFileName();
+  track('salvataggio-esportato');
+  try {
+    const file = new File([text], name, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Salvataggio Super Agente NBA' }); return { msg: 'Salvataggio pronto: tienilo in un posto sicuro (File, Drive, una mail a te stesso).', type: 'good' }; }
+  } catch (e) { if (e && e.name === 'AbortError') return { msg: 'Esportazione annullata.', type: 'info' }; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  return { msg: `Ho scaricato il file ${name}. Tienilo da parte: con quello riprendi la partita anche su un altro telefono.`, type: 'good' };
+}
+async function copySaveCode() {
+  save(); S.lastExport = S.season; save();
+  const code = typeof CompressionStream !== 'undefined' ? 'SAN1:' + await gzip(JSON.stringify(S)) : JSON.stringify(S);
+  try { await navigator.clipboard.writeText(code); track('codice-copiato'); return { msg: 'Codice copiato. Incollalo in una nota o mandalo a te stesso: serve per riprendere la partita.', type: 'good' }; }
+  catch (e) { return { msg: 'Non sono riuscito a copiare il codice: usa "Esporta file".', type: 'bad' }; }
+}
+// importa: da file o da codice. Controlla che sia davvero una partita prima di sovrascrivere.
+async function readSave(text) {
+  text = String(text || '').trim();
+  let obj = null;
+  try {
+    if (text.startsWith('SAN1:')) obj = JSON.parse(await gunzip(text.slice(5)));
+    else obj = JSON.parse(text);
+  } catch (e) { return null; }
+  if (!obj || typeof obj !== 'object' || !obj.players || !obj.teams || !obj.clients || !obj.agency) return null;
+  return obj;
+}
+function applyImport(obj) {
+  obj.savedAt = Date.now(); // così vince anche sul salvataggio nel cloud
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(obj)); } catch (e) { return { msg: 'Il telefono non ha spazio per salvare la partita.', type: 'bad' }; }
+  track('salvataggio-importato');
+  setTimeout(() => location.reload(), 300);
+  return { msg: `Partita di ${obj.agency} caricata (stagione ${obj.season}-${String(obj.season + 1).slice(2)}).`, type: 'good' };
+}
 async function gzip(str) {
   const buf = new Uint8Array(await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
   let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
@@ -2049,6 +2121,10 @@ function legendCamp(pid, ci) {
 }
 
 function offseason() {
+  const played = S.history.length + 1;
+  if ([1, 2, 3, 5, 10, 20, 30].includes(played)) track('stagioni-giocate-' + played);
+  // promemoria: copia la partita ogni tanto
+  if (played >= 2 && (S.lastExport == null || S.lastExport < S.season - 1)) addNews('💾 Hai giocato tante stagioni: in Home, sezione Impostazioni, puoi <b>esportare il salvataggio</b>. Se il telefono cancella i dati del sito, con quello riprendi da dove eri.', 'warn');
   const retiredNow = [];
   for (const p of Object.values(S.players)) {
     if (p.retired) continue;
@@ -2278,6 +2354,7 @@ const UI = {
           <div class="brand">${ic('ball', 'logo')} <span>${esc(S.agency)}</span>${S.legend ? ` <span class="legend" title="Agente leggendario">${ic('trophy')}</span>` : ''}${S.president ? ` <span class="legend" title="Presidente">${ic('crown')}</span>` : ''}${S.talentScout ? ` <span class="legend" title="Scopritore di talenti">${ic('star')}</span>` : ''}</div>
           <div class="spacer"></div>
           <div class="cash-pill ${S.cash < 0 ? 'bad' : ''}" id="t-cash2">${fmt$(S.cash)}</div>
+          <button class="btn help" id="t-feedback" onclick="openFeedback()" aria-label="Dai un parere">${ic('chat')}</button>
           <button class="btn help" id="t-help" onclick="Tutorial.start()" aria-label="Rivedi il tutorial">?</button>
           <button class="btn primary big ${inbox ? 'blocked' : ''}" id="t-adv" onclick="advance()" ${S.over ? 'disabled' : ''}>${inbox ? `Decidi ${inbox === 1 ? 'l\'imprevisto' : 'gli ' + inbox + ' imprevisti'}` : advLabel}</button>
         </div>
@@ -2316,6 +2393,7 @@ const UI = {
       <div class="rules"><p>Scopri un ragazzo al college prima di tutti, conquista la sua fiducia e portalo al Draft. Poi strappa alle squadre il contratto che merita e guardalo diventare una stella.</p>
         <p>Firma i campioni che gli altri agenti non riescono nemmeno a incontrare, fai crescere la tua agenzia e prova a portare un tuo cliente oltre i record di Wilt Ciambellano e LeBonno James.</p></div>
       ${has ? '<p class="small">C\'è una partita salvata: verrà sovrascritta.</p>' : ''}
+      <p class="start-links"><button class="linkbtn" onclick="UI.importModal()">Hai un salvataggio? Caricalo</button> · <button class="linkbtn" onclick="openFeedback()">Dai un parere</button></p>
       <p class="small muted">Squadre, giocatori, sponsor e personaggi famosi sono parodie con nomi storpiati.</p>
     </div>`;
   },
@@ -2330,7 +2408,24 @@ const UI = {
       : 'Apri il menu del browser e scegli <b>Installa app</b> o <b>Aggiungi alla schermata Home</b>.'}
       Si aprirà a schermo intero e funzionerà anche senza internet.</span></div>`;
   },
-  start(f) { newGame(f.agency.value.trim(), f.agent.value.trim()); this.tab = 'home'; this.render(); window.scrollTo(0, 0); setTimeout(() => Tutorial.start(), 400); },
+  async doExport() { const r = await exportSave(); toast(r.msg, r.type, r.type === 'good' ? 'Salvataggio esportato' : undefined); this.render(); },
+  async doCopyCode() { const r = await copySaveCode(); toast(r.msg, r.type, r.type === 'good' ? 'Codice copiato' : undefined); this.render(); },
+  importModal() {
+    this.openModal(`<h3>Carica un salvataggio</h3>
+      <p class="small">Scegli il file che hai esportato, oppure incolla il codice copiato.${S ? ' <b>La partita di adesso verrà sostituita.</b>' : ''}</p>
+      <label class="btn sm filebtn">Scegli il file<input type="file" accept=".json,application/json,text/plain" onchange="UI.importFile(this)" hidden></label>
+      <textarea id="imp-code" rows="4" placeholder="Oppure incolla qui il codice (inizia con SAN1:)"></textarea>
+      <p class="bad small" id="imp-err" hidden></p>
+      <div class="actions"><button class="btn primary" onclick="UI.importCode()">Carica il codice</button><button class="btn" onclick="UI.closeModal()">Annulla</button></div>`);
+  },
+  async importFile(input) { const f = input.files && input.files[0]; if (f) this.importText(await f.text()); },
+  importCode() { this.importText(document.getElementById('imp-code').value); },
+  async importText(text) {
+    const obj = await readSave(text), err = document.getElementById('imp-err');
+    if (!obj) { if (err) { err.hidden = false; err.textContent = 'Questo non sembra un salvataggio di Super Agente NBA. Controlla di aver copiato tutto il codice.'; } return; }
+    const r = applyImport(obj); this.closeModal(); toast(r.msg, r.type, r.type === 'good' ? 'Partita caricata' : undefined);
+  },
+  start(f) { track('nuova-partita'); newGame(f.agency.value.trim(), f.agent.value.trim()); this.tab = 'home'; this.render(); window.scrollTo(0, 0); setTimeout(() => Tutorial.start(), 400); },
 
   /* ---------- Home ---------- */
   heroPlayer() {
@@ -2398,7 +2493,14 @@ const UI = {
           <input type="checkbox" id="set-games" class="switch" ${S.showGames !== false ? 'checked' : ''} onchange="UI.setGames(this.checked)">
         </label>
       </div>
-      <p style="margin-top:28px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="Tutorial.start()">❓ Rivedi il tutorial</button><button class="btn bad sm" onclick="UI.reset()">Ricomincia da capo</button></p>`;
+      <div class="card savebox"><b>Il tuo salvataggio</b>
+        <span class="small muted">La partita è salvata solo su questo dispositivo, e Safari a volte cancella i dati dei siti che non apri da un po'. Esportala ogni tanto: con il file (o il codice) la riprendi anche su un altro telefono.${S.lastExport != null ? ` Ultima esportazione: stagione ${S.lastExport}-${String(S.lastExport + 1).slice(2)}.` : ''}</span>
+        <div class="actions"><button class="btn primary sm" onclick="UI.doExport()">Esporta file</button><button class="btn sm" onclick="UI.doCopyCode()">Copia codice</button><button class="btn sm" onclick="UI.importModal()">Importa</button></div></div>
+      <div class="card savebox"><b>Ti piace il gioco? Cosa cambieresti?</b>
+        <span class="small muted">È ancora in prova: ogni parere aiuta a migliorarlo. Bastano due minuti.</span>
+        <div class="actions"><button class="btn primary sm" onclick="openFeedback()">Dai un parere</button></div></div>
+      <p class="small muted">Il gioco conta le visite in forma anonima, senza cookie e senza dati personali, solo per sapere quante persone lo provano e quante ci tornano.</p>
+      <p style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="Tutorial.start()">❓ Rivedi il tutorial</button><button class="btn bad sm" onclick="UI.reset()">Ricomincia da capo</button></p>`;
   },
   eventCard(e) {
     const def = EVENTS.find(x => x.id === e.ev);

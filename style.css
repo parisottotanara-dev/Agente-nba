@@ -662,3 +662,12 @@ body { padding-top: env(safe-area-inset-top, 0px); }
 .card.care p { margin: 0; }
 .lux { display: grid; gap: 6px; margin-top: 14px; padding: 12px; border-radius: 12px; border: 1px dashed var(--gold); background: #2a2210; justify-items: start; }
 .lux .tk-odds { width: 100%; }
+
+/* salvataggio, pareri */
+.card.savebox { display: grid; gap: 6px; margin: 10px 0; }
+.card.savebox .actions { margin-top: 4px; }
+.start-links { margin-top: 14px; font-size: 14px; color: var(--muted); }
+.linkbtn { background: none; border: 0; padding: 4px 2px; color: var(--accent); font: inherit; text-decoration: underline; }
+.filebtn { display: inline-block; margin: 8px 0; cursor: pointer; }
+#imp-code { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; font-size: 14px; }
+.top-row .btn.help .ic { width: 20px; height: 20px; }
