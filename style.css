@@ -648,3 +648,11 @@ div.rules p { margin: 0 0 10px; }
    Senza questo la barra fissa scendeva di quello spazio e copriva l'inizio della pagina. */
 body { padding-top: env(safe-area-inset-top, 0px); }
 @media (display-mode: standalone) { .start { padding-top: 24px; } }
+
+/* regali */
+.gifts { display: grid; gap: 8px; margin: 10px 0; }
+.gift { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; color: var(--text); font: inherit; }
+.gift b { font-size: 14.5px; } .gift small { grid-column: 1; color: var(--muted); font-size: 12.5px; } .gift small.good { color: var(--good); }
+.gift span { grid-column: 2; grid-row: 1 / span 3; align-self: center; font-weight: 800; color: var(--accent); }
+.gift:disabled { opacity: .45; }

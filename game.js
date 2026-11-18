@@ -324,8 +324,8 @@ const STAFF = {
   academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma ragazzi che arrivano al Draft già legati a te. Un\'accademia più grande attira ragazzi migliori, e ogni tanto ci passa un talento generazionale da trasformare in campione.' },
   informer: { name: 'Informatore', icon: '🕵️', desc: 'Ti passa soffiate sui prospetti del prossimo Draft: potenziale, chi vuole essere seguito, chi sta per firmare con un rivale. All\'inizio è scarso e a volte sbaglia.' },
 };
-const UPGRADE_COSTS = { hq: [250000, 700000, 1800000, 4500000, 10000000], academy: [1500000, 3000000, 6000000, 10000000, 16000000] };
-const upgradeCost = (lvl, k) => (UPGRADE_COSTS[k] || [60000, 150000, 320000, 650000, 1300000])[lvl] ?? Infinity;
+const UPGRADE_COSTS = { hq: [250000, 900000, 3000000, 9000000, 25000000], academy: [1500000, 4000000, 10000000, 22000000, 45000000] };
+const upgradeCost = (lvl, k) => (UPGRADE_COSTS[k] || [60000, 220000, 750000, 2500000, 7000000])[lvl] ?? Infinity;
 // costi fissi: staff, sede, accademia e gestione dei clienti (dal quarto in poi)
 // quanto aumentano le spese settimanali con un livello in più
 const ACADEMY_REP = 45;
@@ -884,13 +884,35 @@ function releaseClient(pid) {
   changeRep(-1);
   addNews(`👋 Hai lasciato andare ${esc(p.name)}.`, 'bad');
 }
-function contact(pid) {
-  const p = P(pid);
-  if (p.lastContact === S.turn) return 'Lo hai già sentito questa settimana.';
-  p.lastContact = S.turn; p.morale = clamp(p.morale + randi(4, 9), 0, 100);
-  return pick([`Cena con ${p.name}: è di ottimo umore.`, `Lunga telefonata con ${p.name}. Si sente seguito.`,
-    `Hai assistito all'allenamento di ${p.name}.`, `Hai portato ${p.name} a un evento benefico.`]);
+/* ---------- Regali e attenzioni ai clienti ----------
+   Tenere contento un giocatore costa: più guadagna, più deve essere bello il regalo. */
+const GIFTS = [
+  { label: 'Cena in un ristorante di lusso', k: 1, mor: [4, 8], likes: ['festaiolo', 'gentile'] },
+  { label: 'Regalo su misura', k: 4, mor: [9, 14], likes: ['vanitoso', 'avido'], hint: 'orologio, scarpe da collezione, una giacca fatta a mano' },
+  { label: 'Vacanza pagata per tutta la famiglia', k: 12, mor: [16, 24], likes: ['festaiolo', 'leale'], loyal: true },
+];
+// prezzo di base: circa lo 0,05% dello stipendio, minimo $1.000 (i ragazzi del college si accontentano)
+const giftBase = p => Math.round(clamp((p.salary || 0) * 1e6 * 0.0005, 1000, 25000) / 100) * 100;
+const giftCost = (p, i) => giftBase(p) * GIFTS[i].k;
+function giveGift(pid, i = 0) {
+  const p = P(pid), gft = GIFTS[i], cost = giftCost(p, i);
+  if (p.lastContact === S.turn) return { msg: `Hai già pensato a ${p.name} questa settimana.`, type: 'warn' };
+  if (S.cash < cost) return { msg: `Servono ${fmt$(cost)}.`, type: 'bad' };
+  spend(cost); p.lastContact = S.turn;
+  let m = randi(gft.mor[0], gft.mor[1]);
+  const loves = gft.likes.some(t => hasTrait(p, t));
+  if (loves) m = Math.round(m * 1.5);
+  if (hasTrait(p, 'professionista') && gft.loyal) m = Math.round(m * 0.6); // in vacanza pensa solo alla palestra
+  p.morale = clamp(p.morale + m, 0, 100);
+  if (gft.loyal) p.giftLoyal = S.season; // per un po' non ascolta le agenzie rivali
+  if (p.school) p.bond = clamp((p.bond || 0) + Math.round(m / 2), 0, 100);
+  const txt = i === 0 ? pick([`Cena con ${p.name}: è di ottimo umore.`, `Serata in un ristorante stellato con ${p.name} e la sua famiglia.`])
+    : i === 1 ? `${p.name} ha aperto il regalo e ha fatto subito una storia sui social.${loves ? ' Lo ha adorato.' : ''}`
+    : `${p.name} e la famiglia partono per una settimana al mare, tutto pagato da te.${loves ? ' Non smette di ringraziarti.' : ''}`;
+  return { msg: txt, type: 'good' };
 }
+// compatibilità (bot di prova): l'attenzione più economica
+function contact(pid) { const r = giveGift(pid, 0); return r.msg; }
 
 /* ================================================================== */
 /* Eventi settimanali dei clienti                                      */
@@ -1037,7 +1059,7 @@ function genWeeklyEvents() {
     let p = null, pool = [];
     for (let tries = 0; tries < 6 && !pool.length; tries++) {
       p = free.length && !chance(0.1) ? pick(free) : null;
-      if (p && p.morale < 35 && chance(hasTrait(p, 'leale') ? 0.15 : 0.5)) pool = EVENTS.filter(e => e.id === 'rivale');
+      if (p && p.morale < 35 && p.giftLoyal !== S.season && chance(hasTrait(p, 'leale') ? 0.15 : 0.5)) pool = EVENTS.filter(e => e.id === 'rivale');
       else pool = EVENTS.filter(e => !e.rare && (!e.trait || hasTrait(p, e.trait)) && condOk(e, p) && !S.recentEv.includes(e.id));
     }
     if (pool.length) createEvent(pickByTrait(pool, p), p);
@@ -2385,7 +2407,7 @@ const UI = {
       </dl>
       <div class="actions">
         ${offers ? `<button class="btn primary sm" onclick="UI.negotiation(${p.id})">Offerte (${offers})</button>` : ''}
-        <button class="btn sm" onclick="UI.doContact(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>${ic('phone')} Contatta</button>
+        <button class="btn sm" onclick="UI.giftModal(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>${ic('heart')} Regalo</button>
         <button class="btn sm" onclick="UI.recModal(${p.id})">${ic('megaphone')} Consiglia</button>
         <button class="btn sm" onclick="UI.campModal(${p.id})" ${p.campSeason === S.season ? 'disabled' : ''}>${ic('dumbbell')} Camp</button>
         ${!p.school && p.ovr >= 62 ? `<button class="btn sm" onclick="UI.doSponsor(${p.id})" ${S.turn - (p.lastSponsorTry ?? -99) < 4 || p.sponsors.length >= 4 ? 'disabled' : ''} title="$10k · ${Math.round(sponsorChance(p) * 100)}%">💼 Cerca sponsor</button>` : ''}
@@ -2393,6 +2415,16 @@ const UI = {
       </div></div>`;
   },
   doContact(pid) { toast(contact(pid)); save(); this.render(); },
+  giftModal(pid) {
+    const p = P(pid);
+    this.openModal(`<h3>Un pensiero per ${esc(p.name)}</h3>
+      <p class="small">Il morale ora è <b>${p.morale}</b>. Un giocatore contento rinnova più volentieri e ascolta meno le altre agenzie.</p>
+      <div class="gifts">${GIFTS.map((gft, i) => `<button class="gift" onclick="UI.doGift(${pid}, ${i})" ${S.cash < giftCost(p, i) ? 'disabled' : ''}>
+        <b>${gft.label}</b>${gft.hint ? `<small>${gft.hint}</small>` : ''}${gft.likes.some(t => hasTrait(p, t)) ? '<small class="good">gli piacerà molto</small>' : ''}
+        <span>${fmt$(giftCost(p, i))}</span></button>`).join('')}</div>
+      <div class="actions"><button class="btn" onclick="UI.closeModal()">Non questa settimana</button></div>`);
+  },
+  doGift(pid, i) { const r = giveGift(pid, i); save(); this.closeModal(); this.render(); toast(r.msg, r.type, r.type === 'good' ? 'Regalo fatto' : undefined); },
 
   /* ---------- Mercato ---------- */
   v_market() {
@@ -2711,7 +2743,7 @@ const UI = {
         ${p.sponsors.length ? `<dt>Sponsor</dt><dd>${p.sponsors.map(s => `${esc(s.brand)} ${fmtM(s.value)} (${s.years}a)`).join('<br>')}</dd>` : ''}
       </dl>
       <div class="actions">
-        ${mine ? `<button class="btn sm" onclick="UI.doContact(${p.id});UI.player(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>${ic('phone')} Contatta</button>
+        ${mine ? `<button class="btn sm" onclick="UI.giftModal(${p.id})" ${p.lastContact === S.turn ? 'disabled' : ''}>${ic('heart')} Regalo</button>
           <button class="btn sm" onclick="UI.recModal(${p.id})">${ic('megaphone')} Consiglia a una squadra</button>
           <button class="btn sm" onclick="UI.campModal(${p.id})" ${p.campSeason === S.season ? 'disabled' : ''}>${ic('dumbbell')} Camp con una leggenda</button>
           <button class="btn bad sm" onclick="UI.release(${p.id})">Interrompi rapporto</button>`
@@ -2902,7 +2934,7 @@ const Tutorial = {
     { t: 't-chal', h: 'Sfide della stagione', x: 'Ogni stagione arrivano 3 sfide nuove, sempre un po\' più difficili, con un premio in soldi e reputazione. Gli <b>obiettivi</b> qui sotto invece sono traguardi di carriera, una volta sola.' },
     { t: null, h: 'Il carattere', x: 'Ogni giocatore ha il suo carattere e la sua storia, e il carattere si vede in quello che combina: un 🎉 <b>festaiolo</b> può fare serata prima di una partita, un 😤 <b>aggressivo</b> finire in una rissa, un 💛 <b>gentile</b> fare beneficenza. Conta anche negli affari: un leale è difficile da portarti via, uno attaccato ai soldi chiede di più.' },
     { t: null, h: 'I rapporti', x: 'Giocatori, squadre e sponsor si ricordano di te. Se li tratti bene accettano più volentieri le tue richieste, pagano di più e hanno più pazienza nelle trattative. Se tiri troppo la corda… si chiudono le porte. Trovi i rapporti nelle schede dei clienti e nella scheda Lega.' },
-    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: tratti stipendio e anni, guardi cosa preferisce il giocatore e puoi giocare la carta dell\'<b>asta</b> (occhio ai bluff). Le offerte scadono! Usa <b>Contatta</b> per tenerli contenti, <b>Camp</b> per farli allenare con una leggenda e <b>Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
+    { t: 'tab-clients', h: 'Clienti', x: 'Le schede complete dei tuoi assistiti. Quando una squadra fa un\'offerta compare il pulsante <b>Offerte</b>: tratti stipendio e anni, guardi cosa preferisce il giocatore e puoi giocare la carta dell\'<b>asta</b> (occhio ai bluff). Le offerte scadono! Fagli un <b>Regalo</b> per tenerli contenti, <b>Camp</b> per farli allenare con una leggenda e <b>Consiglia</b> per proporli a una squadra: un\'offerta per chi è senza contratto, uno scambio per chi ce l\'ha.' },
     { t: 'tab-market', h: 'Mercato', x: 'Qui trovi nuovi clienti: <b>prospetti</b> del college, <b>free agent</b> e giocatori di altre agenzie. Con <b>🔭 Osserva</b> scopri il loro potenziale, con <b>🤝 Coltiva</b> crei un legame prima del Draft. <b>Proponi</b> chiede un incontro: se accetta inizia una vera trattativa. Tu offri commissione, bonus e <b>promesse</b> da mantenere; lui fa una controfferta e ha una pazienza di 2-5 🏀.' },
     { t: null, h: 'Il Draft', x: 'Puoi <b>consigliare</b> un prospetto a una squadra: se ti danno retta, lo sceglieranno al Draft se è ancora libero al loro turno. Più è buono il rapporto con la squadra, più ti ascoltano. E un ragazzo a cui sei molto legato può sceglierti come agente da solo, prima del Draft.' },
     { t: 'tab-league', h: 'Lega', x: 'Classifica delle 30 squadre col tuo rapporto con ognuna, i rapporti con gli sponsor, i migliori giocatori e la classifica delle agenzie. Le prime 16 vanno ai playoff.' },
