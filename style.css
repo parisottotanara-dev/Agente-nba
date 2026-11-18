@@ -643,3 +643,8 @@ div.rules p { margin: 0 0 10px; }
   nav.tabs button .ic { width: 21px; height: 21px; }
   nav.tabs .badge { position: absolute; top: 2px; left: calc(50% + 6px); margin: 0; font-size: 10px; padding: 0 5px; line-height: 16px; }
 }
+
+/* iPhone installato come app: lo spazio dell'orologio sta sopra la barra, non sopra la pagina.
+   Senza questo la barra fissa scendeva di quello spazio e copriva l'inizio della pagina. */
+body { padding-top: env(safe-area-inset-top, 0px); }
+@media (display-mode: standalone) { .start { padding-top: 24px; } }
