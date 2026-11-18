@@ -431,6 +431,27 @@ function depthChart(tid, healthy = true, extra = null) {
     th.forEach(x => out.set(x.id, { slot: 'third', pos, min: 2 }));
   }
   for (const x of r) if (!out.has(x.id)) out.set(x.id, { slot: 'deep', pos: x.pos, min: 0 });
+  // una riserva forte ruba minuti nel ruolo vicino: prima alla riserva di quel ruolo, poi (se è più forte) anche al titolare
+  const who = id => r.find(x => x.id === id);
+  const benchers = r.filter(x => out.get(x.id).slot === 'bench').sort(rotCmp);
+  for (const b of benchers) {
+    const eb = out.get(b.id);
+    for (const q of POS_ADJ[b.pos] || []) {
+      if (q === eb.pos || eb.min >= 30) continue;
+      let gain = 0;
+      const donors = [...out.entries()].filter(([id, e]) => e.pos === q && (e.slot === 'bench' || e.slot === 'start') && id !== b.id)
+        .sort((x, y) => SLOT_RANK[y[1].slot] - SLOT_RANK[x[1].slot]); // prima la riserva, poi il titolare
+      for (const [id, e] of donors) {
+        const d = who(id), diff = b.ovr - d.ovr;
+        if (diff < (e.slot === 'start' ? 4 : 2)) continue;
+        const floor = e.slot === 'start' ? 26 : 2;
+        const t = Math.min(Math.round(diff * 1.3), e.min - floor, 30 - eb.min - gain);
+        if (t <= 0) continue;
+        e.min -= t; gain += t;
+      }
+      if (gain) { eb.min += gain; eb.also = (eb.also || []).concat(q); }
+    }
+  }
   return out;
 }
 function roleLabel(e, p) {
@@ -439,7 +460,7 @@ function roleLabel(e, p) {
   const base = e.slot === 'start' ? `${n} titolare` : e.slot === 'bench' ? `${n} di riserva` : e.slot === 'third' ? `terz${fem ? 'a' : 'o'} ${n}` : 'fondo panchina';
   return base + (e.slot !== 'deep' && p && e.pos !== p.pos ? ` (adattato, è ${{ PG: 'un play', SG: 'una guardia', SF: 'un\'ala piccola', PF: 'un\'ala grande', C: 'un centro' }[p.pos]})` : '');
 }
-const roleWithMin = (e, p) => roleLabel(e, p) + (e && e.min ? ` · ~${e.min} min` : '');
+const roleWithMin = (e, p) => roleLabel(e, p) + (e && e.min ? ` · ~${e.min} min` : '') + (e && e.also ? ` (gioca anche da ${e.also.map(q => POS_NAME[q]).join(' e da ')})` : '');
 // "centro di riserva · ~16 min", con la nota sugli infortuni dei compagni nello stesso ruolo
 function roleTxt(p, tid) {
   const extra = p.team === tid ? null : p;
