@@ -324,13 +324,14 @@ const STAFF = {
   academy: { name: 'Accademia giovanile', icon: '🎓', desc: 'Ogni estate forma ragazzi che arrivano al Draft già legati a te. Un\'accademia più grande attira ragazzi migliori, e ogni tanto ci passa un talento generazionale da trasformare in campione.' },
   informer: { name: 'Informatore', icon: '🕵️', desc: 'Ti passa soffiate sui prospetti del prossimo Draft: potenziale, chi vuole essere seguito, chi sta per firmare con un rivale. All\'inizio è scarso e a volte sbaglia.' },
 };
-const UPGRADE_COSTS = { hq: [250000, 700000, 1800000, 4500000, 10000000], academy: [400000, 1000000, 2500000, 5000000, 9000000] };
+const UPGRADE_COSTS = { hq: [250000, 700000, 1800000, 4500000, 10000000], academy: [1500000, 3000000, 6000000, 10000000, 16000000] };
 const upgradeCost = (lvl, k) => (UPGRADE_COSTS[k] || [60000, 150000, 320000, 650000, 1300000])[lvl] ?? Infinity;
 // costi fissi: staff, sede, accademia e gestione dei clienti (dal quarto in poi)
 // quanto aumentano le spese settimanali con un livello in più
-const staffStep = k => ({ office: 4000, hq: 6000, academy: 5000 })[k] || 3000;
+const ACADEMY_REP = 45;
+const staffStep = k => ({ office: 4000, hq: 6000, academy: 12000 })[k] || 3000;
 const weeklyCost = () => 6000 + 3000 * (S.staff.scout + S.staff.legal + S.staff.marketing + (S.staff.informer || 0)) + 4000 * S.staff.office
-  + 6000 * (S.staff.hq || 0) + 5000 * (S.staff.academy || 0) + 1200 * Math.max(0, S.clients.length - 3);
+  + 6000 * (S.staff.hq || 0) + 12000 * (S.staff.academy || 0) + 1200 * Math.max(0, S.clients.length - 3);
 /* ---------- Prestiti della banca ----------
    Un prestito alla volta, da restituire a rate settimanali in 2-5 stagioni.
    Quanto ti prestano e a che tasso dipende da reputazione e incassi. */
@@ -394,7 +395,7 @@ function weeklyIncomeEstimate() {
 function earn(amount, why) { S.cash += amount; S.seasonIncome += amount; }
 function spend(amount) { S.cash -= amount; S.seasonExpense += amount; }
 function changeRep(d) {
-  if (d > 0) d *= Math.max(0.3, 1.2 - S.rep / 100); // più sei famoso, più è difficile crescere
+  if (d > 0) d *= Math.max(0.15, 1.15 - S.rep / 85); // più sei famoso, più è difficile crescere
   S.rep = clamp(r1(S.rep + d), 0, 100);
 }
 
@@ -1350,6 +1351,9 @@ function recommend(pid, tid) {
   const p = P(pid), t = S.teams[tid];
   if (p.lastRec === S.turn) return { msg: `Hai già parlato di ${p.name} con una squadra questa settimana.`, type: 'warn' };
   if (p.team === tid) return { msg: `${p.name} gioca già nei ${t.name}.`, type: 'warn' };
+  // uno scambio non si chiede ogni settimana: per chi ha già una squadra, una richiesta a stagione
+  if (p.team != null && !p.school && p.tradeAsk === S.season) return { msg: `Hai già chiesto uno scambio per ${p.name} in questa stagione. Le squadre non vogliono sentirne parlare di nuovo.`, type: 'warn' };
+  if (p.team != null && !p.school) p.tradeAsk = S.season;
   p.lastRec = S.turn;
   const ok = chance(recChance(p, tid));
   if (!ok) {
@@ -1916,7 +1920,7 @@ function developPlayer(p) {
   if (amb && p.age <= 30 && chance(0.5)) d += 1;
   if (sat) d = d > 0 ? d * 0.6 : d * 1.3;
   if (hasTrait(p, 'festaiolo') && chance(0.3)) d -= 1;
-  if (p.campBoost) { d = d < 0 ? d * 0.5 : d; p.campBoost = false; } // il camp estivo frena il declino
+  if (p.campBoost) { d = d < 0 ? d * (p.campBoost === true ? 0.5 : p.campBoost) : d; p.campBoost = false; } // il camp estivo frena il declino
   p.ovr = clamp(Math.round(p.ovr + d), 35, 99);
   p.potNote = null;
   if (amb && p.age <= 29 && chance(0.45)) { p.pot += randi(1, 3); p.potNote = 'up'; }
@@ -1937,9 +1941,9 @@ const LEGENDS = {
   C: ['Kareem Abdul-Gabbiano', 'Shaquille O\'Nil', 'Hakeem Olé-Juwon'],
 };
 const CAMPS = [
-  { id: 0, label: 'Una settimana', cost: 40, base: 0.5 },
-  { id: 1, label: 'Un mese', cost: 90, base: 1 },
-  { id: 2, label: 'Tutta l\'estate', cost: 160, base: 2 },
+  { id: 0, label: 'Una settimana', cost: 60, base: 0.5 },
+  { id: 1, label: 'Un mese', cost: 150, base: 1 },
+  { id: 2, label: 'Tutta l\'estate', cost: 300, base: 2 },
 ];
 const legendFor = p => LEGENDS[p.pos][(p.id + S.season) % 3];
 // Stima del camp: stessa formula del risultato vero, senza la parte casuale
@@ -1956,19 +1960,20 @@ function legendCamp(pid, ci) {
   spend(cost); p.campSeason = S.season;
   chalUpdate('camp', 1);
   const lg = legendFor(p);
-  let gain = Math.round(c.base + rand(-0.5, 1));
-  if (p.age <= 24) gain += chance(0.4) ? 1 : 0;
-  if (p.age <= 24 && p.pot - p.ovr >= 8 && chance(0.5)) gain += 1; // un vero talento risponde meglio agli allenamenti
-  if (p.age >= 30) gain -= 1;
-  if (hasTrait(p, 'professionista') || hasTrait(p, 'ambizioso')) gain += 1;
+  // il camp fa crescere prima, ma non oltre il talento che ha: chi è già al suo massimo migliora poco
+  const room = Math.max(0, p.pot - p.ovr);
+  let gain = Math.round(c.base + rand(-0.5, 0.8));
+  if (p.age <= 24 && room >= 6 && chance(0.4)) gain += 1; // un vero talento risponde meglio agli allenamenti
+  if (hasTrait(p, 'professionista') || hasTrait(p, 'ambizioso')) gain += chance(0.5) ? 1 : 0;
   if (hasTrait(p, 'appagato')) gain -= 1;
   let note = '';
   if (hasTrait(p, 'festaiolo') && chance(0.3)) { gain -= 1; note = ' Ha saltato qualche allenamento per una festa.'; }
-  gain = Math.max(0, gain);
+  gain = Math.min(Math.max(0, gain), room + (room === 0 && chance(0.15) ? 1 : 0));
+  if (p.age >= 29) gain = Math.min(gain, chance(0.25) ? 1 : 0); // da veterano conta soprattutto non calare
   p.ovr = clamp(p.ovr + gain, 35, 99);
   let potUp = 0;
-  if (p.age <= 25 && c.id === 2 && chance(0.5)) { potUp = 1; p.pot += potUp; }
-  if (p.age >= 29) p.campBoost = true;
+  if (p.age <= 24 && c.id === 2 && chance(0.2)) { potUp = 1; p.pot += potUp; }
+  if (p.age >= 29) p.campBoost = [0.7, 0.55, 0.4][c.id]; // più lungo il camp, più frena il declino
   capPot(p);
   p.morale = clamp(p.morale + 5 + c.id * 2, 0, 100);
   const txt = `${c.label} con ${lg}: ${gain ? `+${gain} di valutazione` : 'nessun miglioramento visibile'}${potUp ? `, potenziale +${potUp}` : ''}${p.age >= 29 ? ', il declino rallenterà' : ''}.${note}`;
@@ -2330,7 +2335,7 @@ const UI = {
     const def = EVENTS.find(x => x.id === e.ev);
     const p = e.pid != null ? P(e.pid) : null;
     if (!def) return '';
-    return `<div class="ev ${e.rare ? 'rare' : ''}">${e.rare ? '<div class="rare-tag">Colpo di scena · capita di rado</div>' : ''}
+    return `<div class="ev ${e.rare ? 'rare' : ''}">${e.rare ? '<div class="rare-tag">Colpo di scena</div>' : ''}
       <div class="ev-top">${p ? `<div class="ev-av">${avatarSVG(p, 54)}<span>${ic(emoIcon(e.ico))}</span></div>` : `<div class="ev-ico">${ic(emoIcon(e.ico))}</div>`}
         <div><h3>${esc(e.title)}</h3><p>${esc(e.text)}</p>${def.trait && TRAITS[def.trait] ? `<span class="trait why">Succede perché è ${TRAITS[def.trait].label.toLowerCase()}</span>` : ''}</div></div>
       <div class="choices">${def.choices.map((ch, i) => {
@@ -2806,7 +2811,8 @@ const UI = {
         return `<div class="card"><h3>${s.icon} ${s.name}</h3><div class="muted small">${s.desc}</div>
           <p>${k === 'informer' ? `<b>${INFORMER_LV[lvl]}</b>` : `Livello <b>${lvl}</b> / 5`} ${'★'.repeat(lvl)}${'☆'.repeat(5 - lvl)}</p>
           ${lvl < 5 && net - staffStep(k) < 0 ? `<p class="small bad">Con questo livello andresti in perdita di ${fmt$(staffStep(k) - net)} a settimana.</p>` : ''}
-          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
+          ${k === 'academy' && !lvl && S.rep < ACADEMY_REP ? `<p class="small muted">Per aprirla serve una reputazione di almeno ${ACADEMY_REP}: le famiglie affidano i figli solo a un agente con un nome.</p>` : ''}
+          ${lvl < 5 ? `<button class="btn primary sm" onclick="UI.upgrade('${k}')" ${S.cash < cost || (k === 'academy' && !lvl && S.rep < ACADEMY_REP) ? 'disabled' : ''}>${k === 'informer' && !lvl ? 'Assumi' : 'Potenzia'} (${fmt$(cost)})</button>` : '<span class="good">Al massimo!</span>'}</div>`;
       }).join('')}</div>
       <h2>Banca</h2>
       <div class="card bank">${S.loan ? `<p>Prestito di <b>${fmt$(S.loan.amount)}</b> al ${S.loan.rate}% l'anno. Rata <b>${fmt$(S.loan.perWeek)}</b> a settimana. Debito che resta: <b>${fmt$((fixLoan(), S.loan.balance))}</b>.</p>
@@ -2827,6 +2833,7 @@ const UI = {
   doDonate() { const r = donate(); save(); this.render(); toast(r.msg, r.type); },
   upgrade(k) {
     const cost = upgradeCost(S.staff[k] || 0, k);
+    if (k === 'academy' && !S.staff.academy && S.rep < ACADEMY_REP) return toast(`Nessuna famiglia manda il figlio nell'accademia di un agente poco conosciuto: serve una reputazione di almeno ${ACADEMY_REP}.`, 'bad', 'Troppo presto');
     if (S.cash < cost) return toast('Fondi insufficienti.', 'bad');
     spend(cost); S.staff[k] = (S.staff[k] || 0) + 1;
     toast(k === 'informer' ? (S.staff[k] === 1 ? 'Hai assunto un informatore. È ancora scarso, ma ti passerà le prime soffiate.' : `Il tuo informatore ora è: ${INFORMER_LV[S.staff[k]]}.`) : `${STAFF[k].name}: livello ${S.staff[k]}.`, 'good', 'Upgrade!');
