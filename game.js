@@ -1884,11 +1884,24 @@ function hideToast() { const el = document.getElementById('toast'); if (el && el
 let toastAt = 0;
 // pulsanti − / + per le cifre: un tocco = un passo, tenendo premuto scorre veloce
 let stepTimer = null;
+// campo cifra con − e +: si può toccare i pulsanti oppure scrivere il numero
+function stepper(id, v, step, min, max, suf) {
+  return `<div class="stepper" data-id="${id}" data-step="${step}" data-min="${min}" data-max="${max}">
+    <button type="button" class="st-btn" data-d="-1" aria-label="Diminuisci" ${v <= min ? 'disabled' : ''}>−</button>
+    <label class="st-mid"><span>$</span><input id="${id}" type="number" inputmode="decimal" step="any" min="${min}" max="${max}" value="${v}" style="width:${String(v).length + 0.7}ch" oninput="this.style.width=(this.value.length + 0.7)+'ch'" onchange="stepFix(this)"><span>${suf}</span></label>
+    <button type="button" class="st-btn" data-d="1" aria-label="Aumenta" ${v >= max ? 'disabled' : ''}>+</button></div>`;
+}
+function stepSet(box, v) {
+  const inp = document.getElementById(box.dataset.id), min = +box.dataset.min, max = +box.dataset.max;
+  v = clamp(Math.round(v * 10) / 10, min, max);
+  inp.value = v; inp.style.width = (String(v).length + 0.7) + 'ch';
+  box.querySelectorAll('.st-btn').forEach(b => { b.disabled = (+b.dataset.d < 0 && v <= min) || (+b.dataset.d > 0 && v >= max); });
+  return v;
+}
+function stepFix(inp) { const box = inp.closest('.stepper'); stepSet(box, isFinite(+inp.value) && inp.value !== '' ? +inp.value : +box.dataset.min); }
 function stepBy(btn) {
   const box = btn.closest('.stepper'), inp = document.getElementById(box.dataset.id);
-  const v = clamp(+inp.value + +box.dataset.step * +btn.dataset.d, +box.dataset.min, +box.dataset.max);
-  inp.value = v; document.getElementById(box.dataset.id + '-v').textContent = '$' + v + 'k';
-  box.querySelectorAll('.st-btn').forEach(b => { b.disabled = (+b.dataset.d < 0 && v <= +box.dataset.min) || (+b.dataset.d > 0 && v >= +box.dataset.max); });
+  stepSet(box, (+inp.value || 0) + +box.dataset.step * +btn.dataset.d);
   if (btn.disabled) clearInterval(stepTimer);
 }
 document.addEventListener('pointerdown', e => {
@@ -2264,7 +2277,7 @@ const UI = {
       <ul class="tk-log">${t.log.slice(-5).map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       <div class="neg-form">
         <label>Commissione che chiedi: <b id="tk-cv">${sug.comm}%</b><input id="tk-c" type="range" min="1" max="4" step="0.5" value="${sug.comm}" oninput="document.getElementById('tk-cv').textContent=this.value+'%'"></label>
-        <div class="lbl">Bonus alla firma che offri<div class="stepper" data-id="tk-b" data-step="5" data-min="0" data-max="${Math.max(100, Math.ceil(t.ask.bonus * 2 / 5) * 5)}"><button type="button" class="st-btn" data-d="-1" aria-label="Meno 5 mila dollari" ${sug.bonus <= 0 ? 'disabled' : ''}>−</button><output id="tk-b-v">$${sug.bonus}k</output><button type="button" class="st-btn" data-d="1" aria-label="Più 5 mila dollari">+</button><input type="hidden" id="tk-b" value="${sug.bonus}"></div><small>a passi di $5k · tieni premuto per andare veloce</small></div>
+        <div class="lbl">Bonus alla firma che offri${stepper('tk-b', sug.bonus, 5, 0, Math.max(100, Math.ceil(t.ask.bonus * 2 / 5) * 5), 'k')}<small>tocca − e + (passi di $5k, tieni premuto per andare veloce) oppure tocca la cifra e scrivila</small></div>
       </div>
       <div class="promises"><b>🤝 Promesse</b> <span class="small muted">valgono come moneta, ma vanno mantenute entro fine stagione regolare</span>
         ${Object.entries(PROMISES).filter(([k]) => promiseFeasible(p, k)).map(([k, pr]) => `<label class="pr-row"><input type="checkbox" id="tk-pr-${k}"><span>${pr.label}${pr.likes.some(t => hasTrait(p, t)) ? ' <span class="good small">· gli piace molto</span>' : ''}</span></label>`).join('')}</div>
@@ -2343,7 +2356,7 @@ const UI = {
       ${msg ? `<p class="warn">${esc(msg)}</p>` : ''}
       <h3 style="margin-top:14px">Trattativa con ${esc(S.teams[sel.teamId].name)}</h3>
       <div class="neg-form">
-        <label>Stipendio richiesto (M$/anno)<input id="ask" type="number" step="0.1" min="${MIN_SAL}" max="${MAX_SAL}" value="${r1(sel.salary * 1.12)}"></label>
+        <div class="lbl">Stipendio che chiedi (all'anno)${stepper('ask', r1(sel.salary * 1.12), 0.5, MIN_SAL, MAX_SAL, 'M')}</div>
         <label>Anni<select id="yrs">${[1, 2, 3, 4, 5].map(y => `<option ${y === sel.years ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
       </div>
       <p class="small muted">Chiedere troppo fa perdere pazienza al GM. <b>Contratto corto</b>: se migliora, il prossimo sarà più ricco (e anche la tua commissione), ma rischi se si infortuna o cala. <b>Contratto lungo</b>: soldi sicuri. ${p.age >= 30 ? 'A questa età preferisce la sicurezza.' : hasTrait(p, 'ambizioso') && p.age <= 25 ? 'Da ambizioso preferirebbe un contratto corto.' : ''}</p>
@@ -2355,7 +2368,7 @@ const UI = {
       ${sel.lev || sel.final ? '' : `<div class="lev">
         <b>📢 Gioca la carta dell'asta</b>
         <p class="small muted">Dì ai ${esc(S.teams[sel.teamId].name)} che hai un'offerta più alta: possono rilanciare, fermarsi o ritirarsi. ${best ? `La tua offerta migliore vera è <b>${fmtM(best)}</b>.` : 'Non hai altre offerte: sarebbe un bluff.'} Se bluffi e ti scoprono, ritirano l'offerta. Una volta sola per squadra.</p>
-        <div class="lev-row"><input id="claim" type="number" step="0.1" value="${r1(best > sel.salary ? best : sel.salary * 1.15)}" aria-label="Offerta che citi (M$)"><button class="btn sm" onclick="UI.doLeverage(${pid}, ${sel.id})">Cita questa offerta</button></div>
+        <div class="lev-row">${stepper('claim', r1(best > sel.salary ? best : sel.salary * 1.15), 0.5, MIN_SAL, MAX_SAL, 'M')}<button class="btn sm" onclick="UI.doLeverage(${pid}, ${sel.id})">Cita questa offerta</button></div>
       </div>`}`);
   },
   doLeverage(pid, oid) {

@@ -576,3 +576,15 @@ tr.cutline td { border-top: 2px dashed var(--accent); }
 /* niente zoom con il doppio tocco; i campi a 16px evitano lo zoom automatico di iPhone */
 html { touch-action: manipulation; }
 input, select, textarea { font-size: max(16px, 1em); }
+
+/* cifra al centro dello stepper: si può anche scrivere */
+.stepper .st-mid { display: flex; align-items: center; justify-content: center; gap: 0; height: 44px; margin: 0; cursor: text;
+  font-size: 18px; font-weight: 800; color: var(--text); }
+.stepper .st-mid input { min-width: 1.7ch; max-width: 7ch; padding: 0; border: none; background: transparent; color: var(--text);
+  font: inherit; font-size: 18px; text-align: center; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.stepper .st-mid input::-webkit-outer-spin-button, .stepper .st-mid input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper .st-mid input:focus { outline: 2px solid var(--accent); border-radius: 6px; }
+.lev-row .stepper { flex: 1; min-width: 0; }
+.neg-form .stepper .st-mid input, .lev-row .stepper .st-mid input { flex: none; border: none; padding: 0; background: transparent; border-radius: 6px; }
+.lev-row { flex-wrap: wrap; }
+.lev-row .stepper { flex: 1 1 200px; }
