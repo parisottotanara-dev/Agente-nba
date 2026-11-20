@@ -23,7 +23,7 @@ Gioco manageriale: sei un **procuratore sportivo** in una NBA parodia. Squadre, 
 - **Home illustrata**: il cliente più pagato schiaccia con la maglia, il numero e il look veri.
 
 ## 📲 Installare l'app sull'iPhone
-1. Apri **https://parisottotanara-dev.github.io/Agente-nba/** con **Safari**.
+1. Apri **https://parisottotanara-dev.github.io/hoop-Agent/** con **Safari**.
 2. Tocca **Condividi** (il quadrato con la freccia) → **Aggiungi alla schermata Home** → **Aggiungi**.
 3. Apri il gioco dall'icona: parte a schermo intero e funziona anche senza internet.
 
